@@ -1,0 +1,10 @@
+version: "3.8"
+services:
+    landing-page:
+        build: .
+        environment:
+            - VIRTUAL_HOST=truss.engscitools.ca,truss.aidandev.ca
+        ports:
+            - "5000:80"
+        restart: unless-stopped
+        network_mode: "bridge"
