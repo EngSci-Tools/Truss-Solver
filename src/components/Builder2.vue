@@ -7,7 +7,7 @@
 <script>
 /* eslint-disable no-unused-vars */
 import Vue from 'vue'
-import { mode, placeType, unit, jointType, Joint, Force, MemberGraph, actions, actionTypes, actionErrors, sleep } from '@/assets/utils'
+import { mode, placeType, interactionType, unit, jointType, Joint, Force, MemberGraph, actions, actionTypes, actionErrors, sleep } from '@/assets/utils'
 import * as PIXI from 'pixi.js'
 const { Application, Container, Graphics } = PIXI
 
@@ -30,17 +30,18 @@ export default {
     },
 
     interactions: { // I wish a lot of these could be computed properties... but they can't cause they're pixi things or just too complicated
-      mouseDown: false,
+      placeType: placeType.SELECTING,
+      leftMouseDown: false,
+      rightMouseDown: false,
       mousePos: [0, 0],
       dragging: false,
       dragStart: [], // Stores where a drag started so that we can draw selections correctly. Stored in point coordinate system
-      heldKeys: []
+      heldKeys: [],
+      callbacks: {}
     },
 
     selections: { // Could probably be inside interactions, but it makes watching code more complicated. Lists of points stored in point coordinate system
-      joints: [],
-      members: [],
-      loads: []
+      joints: []
     },
 
     structures: { // Stores the components that make up the simulations.
@@ -99,7 +100,7 @@ export default {
       } if (this.holdingKey('ShiftLeft')) {
         return mode.SECONDARY
       } else {
-        return mode.EDITING
+        return mode.PRIMARY
       }
     },
     mousePoint () {
@@ -120,9 +121,16 @@ export default {
     // await this.testMemberActions()
     // await this.testSelectionActions()
     // await this.testParallelActions()
-    // await this.testAdd()
+    await this.testAdd()
+
+    this.addInteractionListeners()
   },
   methods: {
+    // There are three major method types, Action methods, Interaction methods, and Helper methods.
+    // Action methods: These are the handlers for actions and act using helpers to directly modify the scene
+    // Interaction methods: These add and execute event callbacks for interactions such as drags, mouse clicks, and key presses. These evetually create and execute action objects.
+    // Helper methods: These are used by both action and interaction methods to reduce the amount of code in each callback. They modify component data, parse component data, and create actions out of parameters.
+
     // Uses the concept of actions to edit the scene
     executeHelper (action) {
       // TODO: This got much bigger than expected. I'll do it better later.
@@ -313,7 +321,7 @@ export default {
     },
 
     // Joint Action Handlers
-    // TODO Introduce SIDE EFFECTS where an action can return an action to be executed and stored with it in history.
+    // TODO Introduce SIDE EFFECTS where an action can return an action to be executed and stored with it in history. Question: Would side effects go before the action that spawned them or after? Maybe an option for both? How do I remove the members before the joint?
     aJointAdd (action) {
       const { point, type, id } = action
       if (id in this.structures.joints) {
@@ -431,7 +439,8 @@ export default {
         if (this.interactions.heldKeys.indexOf(e.code) === -1) {
           this.interactions.heldKeys.push(e.code)
         }
-        this.onKeyDown(e.code)
+        // this.onKeyDown(e.code)
+        return this.onKeyDownV2(e)
       })
 
       this.pixi.app.view.addEventListener('wheel', e => {
@@ -444,16 +453,29 @@ export default {
       this.pixi.app.view.addEventListener('mousemove', e => {
         const { movementX: dx, movementY: dy } = e
         const { layerX: x, layerY: y } = e
-        this.onMove([dx, dy], [x, y])
+        // this.onMove([dx, dy], [x, y])
+        this.onMouseMoveV2([dx, dy], [x, y])
       })
 
-      this.pixi.app.renderer.plugins.interaction.on('mousedown', e => this.onMouseDown(e, false))
-      this.pixi.app.renderer.plugins.interaction.on('mouseup', e => this.onMouseUp(e, false))
-      this.pixi.app.renderer.plugins.interaction.on('rightdown', e => this.onMouseDown(e, true))
-      this.pixi.app.renderer.plugins.interaction.on('rightup', e => this.onMouseUp(e, true))
+      this.pixi.app.renderer.plugins.interaction.on('mousedown', e => {
+        // this.onMouseDown(e, false)
+        this.onMouseDownV2(e, false)
+      })
+      this.pixi.app.renderer.plugins.interaction.on('mouseup', e => {
+        // this.onMouseUp(e, false)
+        this.onMouseUpV2(e, false)
+      })
+      this.pixi.app.renderer.plugins.interaction.on('rightdown', e => {
+        // this.onMouseDown(e, true)
+        this.onMouseDownV2(e, true)
+      })
+      this.pixi.app.renderer.plugins.interaction.on('rightup', e => {
+        // this.onMouseUp(e, true)
+        this.onMouseUpV2(e, true)
+      })
     },
     onKeyDown (code) {
-      if (this.mode === mode.EDITING) {
+      if (this.mode === mode.PRIMARY) {
         if (code === 'Backspace') {
           this.removeSelectedJoints()
         }
@@ -472,14 +494,14 @@ export default {
       // To keep consistent structure, we order our if statments as 'mousebutton' -> 'mode' -> 'specifics'
       this.interactions.dragging = false
       if (rightButton) {
-        if (this.mode === mode.EDITING) {
+        if (this.mode === mode.PRIMARY) {
         } else if (this.mode === mode.SECONDARY) {
         } else if (this.mode === mode.COMMAND) {
         }
       } else {
-        this.interactions.mouseDown = true
+        this.interactions.leftMouseDown = true
         this.interactions.dragStart = this.mousePoint
-        if (this.mode === mode.EDITING) {
+        if (this.mode === mode.PRIMARY) {
         } else if (this.mode === mode.SECONDARY) {
         } else if (this.mode === mode.COMMAND) {
         }
@@ -490,9 +512,9 @@ export default {
       // To keep consistent structure, we order our if statments as 'mousebutton' -> 'mode' -> 'specifics'
       // First we do things that we always do to update the interactions
       const { dragging } = this.interactions
-      this.interactions.mouseDown = false
+      this.interactions.leftMouseDown = false
       if (rightButton) {
-        if (this.mode === mode.EDITING) {
+        if (this.mode === mode.PRIMARY) {
           if (!dragging) {
             // Then we want to place a new joint
             const placePoint = this.pointToNearest(this.mousePoint)
@@ -502,7 +524,7 @@ export default {
         } else if (this.mode === mode.COMMAND) {
         }
       } else {
-        if (this.mode === mode.EDITING) {
+        if (this.mode === mode.PRIMARY) {
           if (dragging) {
             // Then we just selected an area
             const selected = this.getJointsWithin(this.interactions.dragStart, this.mousePoint, Object.keys(this.structures.joints))
@@ -529,19 +551,206 @@ export default {
       // To keep consistent structure, we order our if statments as mode' -> 'specifics'
       // First we do things that we always do to update the interactions
       this.interactions.mousePos = [x, y]
-      if (this.interactions.mouseDown) {
+      if (this.interactions.leftMouseDown) {
         const dSqr = (this.mousePoint[0] - this.interactions.dragStart[0]) ** 2 + (this.mousePoint[1] - this.interactions.dragStart[1]) ** 2
         if (dSqr > 0.01) {
           this.interactions.dragging = true
         }
       }
       const { dragging } = this.interactions
-      if (this.mode === mode.EDITING) {
+      if (this.mode === mode.PRIMARY) {
         if (dragging) {
           this.drawSelectionGraph()
         }
       } else if (this.mode === mode.SECONDARY) {
       } else if (this.mode === mode.COMMAND) {
+      }
+    },
+    addInteractionListeners () {
+      this.on({ modes: mode.COMMAND, interactions: interactionType.KEYPRESS, keyFilter: ['KeyJ', 'KeyM', 'KeyF', 'KeyS'] }, ({ keyCode }) => {
+        if (keyCode === 'KeyJ') {
+          this.interactions.placeType = placeType.JOINT
+        } else if (keyCode === 'KeyM') {
+          this.interactions.placeType = placeType.MEMBER
+        } else if (keyCode === 'KeyF') {
+          this.interactions.placeType = placeType.FORCE
+        } else if (keyCode === 'KeyS') {
+          this.interactions.placeType = placeType.SELECTING
+        }
+      })
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.JOINT, interactions: interactionType.LEFTCLICK }, ({ mousePoint }) => this.addJoint(this.pointToNearest(mousePoint)))
+      this.on({ modes: mode.COMMAND, interactions: interactionType.KEYPRESS, keyFilter: ['KeyZ'] }, () => {
+        if (this.holdingKey('ShiftLeft')) {
+          this.redo()
+        } else {
+          this.undo()
+        }
+      })
+      this.on({ interactions: interactionType.RIGHTDRAG }, ({ delta }) => {
+        this.visuals.viewX += delta[0]
+        this.visuals.viewY += delta[1]
+      })
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.SELECTING, interactions: interactionType.LEFTCLICK }, ({ mousePoint }) => {
+        const selected = this.getClosestJoint(mousePoint, Object.keys(this.structures.joints), 1)
+        if (!selected) {
+          // Then the user clicked away from all points
+          this.onAllDeselected()
+        } else {
+          // Then the user clicked on a joint. If it is already selected we remove it.
+          this.onJointsSelected([selected], true)
+        }
+      })
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.SELECTING, interactions: interactionType.LEFTDRAGUP }, ({ dragStart, mousePoint }) => {
+        const selected = this.getJointsWithin(this.interactions.dragStart, this.mousePoint, Object.keys(this.structures.joints))
+        this.onJointsSelected(selected)
+        this.drawSelectionGraph()
+      })
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.SELECTING, interactions: interactionType.LEFTDRAG }, ({ dragStart, mousePoint }) => {
+        this.drawSelectionGraph(dragStart, mousePoint)
+      })
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.SELECTING, interactions: interactionType.KEYPRESS, keyFilter: ['Backspace'] }, () => {
+        this.removeSelectedJoints()
+      })
+      // this.on({ modes: [mode.PRIMARY, mode.SECONDARY], interactions: interactionType.RIGHTDRAG }, res => {
+      //   console.log('Right Drag: ', res)
+      // })
+      // this.on({ mode: mode.PRIMARY, placetype: placeType.SELECTING,  })
+      console.log(this.interactions.callbacks)
+    },
+
+    // New mouse interaction methods
+    on ({ modes, placetypes, interactions, keyFilter }, callback) {
+      // Adds an event listener for the given parameters
+      // mode references the current mode
+      // placetype reference the current placeType
+      // interaction references the current interactionType
+      // keyFilter allows keyboard interactions to be specified as certain keys. {filter: 'KeyD'} would only match when d is pressed.
+      // callback is the function to be called when
+      function toArray (obj) {
+        if (Array.isArray(obj)) {
+          return obj
+        }
+        return [obj]
+      }
+      modes = modes ? toArray(modes) : Object.values(mode)
+      placetypes = placetypes ? toArray(placetypes) : Object.values(placeType)
+      interactions = interactions ? toArray(interactions) : Object.values(interactionType)
+      const keyFilters = keyFilter ? toArray(keyFilter) : null
+      for (const mode of modes) {
+        for (const placetype of placetypes) {
+          for (const interaction of interactions) {
+            this.onHelper(mode, placetype, interaction, keyFilter, callback)
+          }
+        }
+      }
+    },
+    onHelper (mode, placetype, interaction, keyFilter, callback) {
+      const callbacks = this.interactions.callbacks
+      callbacks[mode] = callbacks[mode] || {}
+      callbacks[mode][placetype] = callbacks[mode][placetype] || {}
+      callbacks[mode][placetype][interaction] = callbacks[mode][placetype][interaction] || []
+      this.interactions.callbacks[mode][placetype][interaction].push({ keyFilter, callback })
+    },
+    onKeyDownV2 (e) {
+      const callbacks = this.interactions.callbacks
+      const { code } = e
+      try {
+        let prevent = false
+        const keyCallbacks = callbacks[this.mode][this.interactions.placeType][interactionType.KEYPRESS]
+        for (const { keyFilter, callback } of keyCallbacks) {
+          if (!keyFilter || keyFilter.indexOf(code) > -1) {
+            callback({ keyCode: code, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart })
+            prevent = true
+          }
+        }
+        if (prevent) {
+          e.preventDefault()
+          return false
+        }
+      } catch (err) {
+        if (!(err instanceof TypeError)) {
+          // Then this was a problem where a callback did not exist
+          throw err
+        }
+      }
+      return true
+    },
+    onMouseDownV2 (e, rightButton) {
+      const callbacks = this.interactions.callbacks
+      this.interactions.dragging = false
+      this.interactions.dragStart = this.mousePoint
+      if (rightButton) {
+        this.interactions.rightMouseDown = true
+      } else {
+        this.interactions.leftMouseDown = true
+      }
+      try {
+        const interType = rightButton ? interactionType.RIGHTCLICKDOWN : interactionType.LEFTCLICKDOWN
+        for (const { keyFilter, callback } of callbacks[this.mode][this.interactions.placeType][interType]) {
+          callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart })
+        }
+      } catch (err) {
+        if (!(err instanceof TypeError)) {
+          // Then this was a problem where a callback did not exist
+          throw err
+        }
+      }
+    },
+    onMouseUpV2 (e, rightButton) {
+      const callbacks = this.interactions.callbacks
+      const dragEnd = this.mousePoint
+      try {
+        let interType
+        if (this.interactions.dragging) {
+          interType = rightButton ? interactionType.RIGHTDRAGUP : interactionType.LEFTDRAGUP
+        } else {
+          interType = rightButton ? interactionType.RIGHTCLICK : interactionType.LEFTCLICK
+        }
+        const upCallbacks = callbacks[this.mode][this.interactions.placeType][interType]
+        for (const { keyFilter, callback } of upCallbacks) {
+          callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart })
+        }
+      } catch (err) {
+        if (!(err instanceof TypeError)) {
+          // Then this was a problem where a callback did not exist
+          throw err
+        }
+      }
+      if (rightButton) {
+        this.interactions.rightMouseDown = false
+      } else {
+        this.interactions.leftMouseDown = false
+      }
+      // TODO: Maybe change this so it only makes dragging false if both mouse sides are up
+      this.interactions.dragging = false
+    },
+    onMouseMoveV2 ([dx, dy], [x, y]) {
+      const callbacks = this.interactions.callbacks
+      this.interactions.mousePos = [x, y]
+      if (this.interactions.leftMouseDown || this.interactions.rightMouseDown) {
+        const dSqr = (this.mousePoint[0] - this.interactions.dragStart[0]) ** 2 + (this.mousePoint[1] - this.interactions.dragStart[1]) ** 2
+        if (dSqr > 0.01) {
+          this.interactions.dragging = true
+        }
+      }
+      const { dragging } = this.interactions
+      try {
+        if (dragging) {
+          if (this.interactions.leftMouseDown) {
+            for (const { keyFilter, callback } of callbacks[this.mode][this.interactions.placeType][interactionType.LEFTDRAG]) {
+              callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart, delta: [dx, dy] })
+            }
+          }
+          if (this.interactions.rightMouseDown) {
+            for (const { keyFilter, callback } of callbacks[this.mode][this.interactions.placeType][interactionType.RIGHTDRAG]) {
+              callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart, delta: [dx, dy] })
+            }
+          }
+        }
+      } catch (err) {
+        if (!(err instanceof TypeError)) {
+          throw err
+        }
       }
     },
 
@@ -679,7 +888,7 @@ export default {
         backgroundGraph.lineTo(xVal, height - viewY)
       }
     },
-    drawSelectionGraph () {
+    drawSelectionGraph (pointOne, pointTwo) {
       // Renders the selection box based off of interactions.dragStart and the interactions.mousePos
       const { selectionGraph } = this.pixi
       const { dragging } = this.interactions
@@ -689,10 +898,10 @@ export default {
       selectionGraph.lineStyle(1, 0x2980b9, 1)
       selectionGraph.alpha = 0.4
 
-      if (this.mode === mode.EDITING && dragging) {
+      if (pointOne && pointTwo && this.mode === mode.PRIMARY && dragging) {
         // Then we are in box selection mode and should draw a rectangle
-        const p1 = this.pointToPix(this.interactions.dragStart)
-        const p2 = this.pointToPix(this.mousePoint)
+        const p1 = this.pointToPix(pointOne)
+        const p2 = this.pointToPix(pointTwo)
         selectionGraph.drawRect(p1[0], p1[1], p2[0] - p1[0], p2[1] - p1[1])
         selectionGraph.endFill()
       }
