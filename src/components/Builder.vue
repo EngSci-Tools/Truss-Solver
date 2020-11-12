@@ -42,7 +42,7 @@
       <b-input-group class='mx-1 mt-1 tick-input' append="m" prepend='X Tick Seperation'>
           <b-form-input :value='visuals.xSep' @change='visuals.xSep = $event' class="text-right"></b-form-input>
         </b-input-group>
-      <b-button class='m-1 mt-1' @click='getInternalForces'>Calculate</b-button>
+      <b-button class='m-1 mt-1' @click='getInternalForces' :variant='calculatedFailed ? "danger" : ""'>{{ calculatedFailed ? calculatedFailedMessage : 'Caculate' }}</b-button>
       <div v-if='jointSelected'>
         <h4 class='m-1 mt-3'>Joints:</h4>
         <b-dropdown class='mx-1' :text='selectedJointsType'>
@@ -97,6 +97,9 @@ export default {
     undoneActions: [],
     showingResults: false,
     copied: false,
+
+    calculatedFailed: false,
+    calculatedFailedMessage: 'Pin 2 Joints',
     visuals: { // When any of the visuals update, the whole image should be redrawn
       width: 0,
       height: 0,
@@ -1467,19 +1470,34 @@ export default {
       return solutions
     },
     getInternalForces () {
+      if (this.calculatedFailed) {
+        return
+      }
       const members = this.structures.members.getAllMembers()
       const joints = Object.keys(this.structures.joints)
       const componentMatrix = this.forceComponentMatrix(members, joints)
-      const solutionVector = this.forceSolutionVector(joints)
+      let solutionVector
+      try {
+        solutionVector = this.forceSolutionVector(joints)
+      } catch (err) {
+        this.onCalculateFailed()
+        return
+      }
       const solution = linear.solve(componentMatrix, solutionVector)
       const forces = {}
       for (let i = 0; i < members.length; i++) {
-        forces[`${members[i][0]}-${members[i][1]}`] = this.toSlideRule(solution[i])
+        forces[`${members[i][0]}-${members[i][1]}`] = this.toSlideRule(Math.round(solution[i] * 100000) / 100000)
       }
       this.structures.internalForces = forces
       this.showingResults = true
       this.copied = false
       return forces
+    },
+    onCalculateFailed () {
+      this.calculatedFailed = true
+      setTimeout(() => {
+        this.calculatedFailed = false
+      }, 2000)
     },
 
     // Helpers for exporting and importing
