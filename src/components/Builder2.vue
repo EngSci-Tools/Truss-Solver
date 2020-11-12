@@ -1,6 +1,79 @@
 <template>
   <div class='builder' ref='builder' oncontextmenu="return false;">
     <!-- TODO: Add a toolbar to go above the canvas -->
+    <b-modal id="modal-xl" size="xl" v-model='showingResults' title="Extra Large Modal">
+      <b-table-simple>
+        <b-thead>
+          <b-tr>
+            <b-td>Joint 1</b-td>
+            <b-td>Joint 2</b-td>
+            <b-td>Magnitude</b-td>
+            <b-td>Type</b-td>
+          </b-tr>
+        </b-thead>
+        <b-tbody>
+          <b-tr v-for='(force, member) in structures.internalForces' :key=member>
+            <b-td>{{ member.split('-')[0] }}</b-td>
+            <b-td>{{ member.split('-')[1] }}</b-td>
+            <b-td>{{ force }} kN</b-td>
+            <b-td>{{ force >= 0 ? 'Tensile' : 'Compressive' }}</b-td>
+          </b-tr>
+        </b-tbody>
+      </b-table-simple>
+    </b-modal>
+    <div class='toolbar'>
+      <b-button-toolbar key-nav aria-label="Toolbar with button groups">
+        <b-button-group class="mx-1">
+          <b-button @click='undo'>Undo</b-button>
+          <b-button @click='redo' :disabled='undoneActions.length < 1'>Redo</b-button>
+        </b-button-group>
+        <b-dropdown class="mx-1" right :text='`Mode: ${interactions.placeType}`'>
+          <b-dropdown-item @click='setMode(placeType.SELECTING)'>Select</b-dropdown-item>
+          <b-dropdown-item @click='setMode(placeType.JOINT)'>Joints</b-dropdown-item>
+          <b-dropdown-item @click='setMode(placeType.MEMBER)'>Members</b-dropdown-item>
+          <b-dropdown-item @click='setMode(placeType.FORCE)'>Loads</b-dropdown-item>
+        </b-dropdown>
+      </b-button-toolbar>
+      <b-input-group class='mx-1 mt-1 tick-input' append="m" prepend='Y Tick Seperation'>
+          <b-form-input :value='visuals.ySep' @change='visuals.ySep = $event' class="text-right"></b-form-input>
+        </b-input-group>
+      <b-input-group class='mx-1 mt-1 tick-input' append="m" prepend='X Tick Seperation'>
+          <b-form-input :value='visuals.xSep' @change='visuals.xSep = $event' class="text-right"></b-form-input>
+        </b-input-group>
+      <b-button class='m-1 mt-1' @click='getInternalForces'>Calculate</b-button>
+      <div v-if='jointSelected'>
+        <h3 class='m-1 mt-3'>Joint:</h3>
+        <b-dropdown class='mx-1' :text='selectedJointsType'>
+          <b-dropdown-item @click='setSelectedJointType(jointType.FLOATING)'>Floating</b-dropdown-item>
+          <b-dropdown-item @click='setSelectedJointType(jointType.PIN)'>Pin</b-dropdown-item>
+        </b-dropdown>
+        <b-button class='m-1' @click='removeSelectedJoints'>Remove</b-button>
+      </div>
+      <div v-if='memberSelected'>
+        <h3 class='m-1 mt-3'>Member:</h3>
+        <b-button class='m-1' @click='removeSelectedMembers'>Remove</b-button>
+      </div>
+      <div v-if='forceSelected'>
+        <h3 class='m-1 mt-3'>Load:</h3>
+        <b-button-toolbar key-nav class='m-1 input-toolbar'>
+          <b-input-group append="kN">
+            <b-form-input :value='selectedForcesMagnitude' @change='setSelectedForceMagnitude($event)' class="text-right"></b-form-input>
+          </b-input-group>
+          <b-button-group>
+            <b-button @click='setSelectedForceMagnitude()'>Apply</b-button>
+          </b-button-group>
+        </b-button-toolbar>
+        <b-button-toolbar key-nav class='m-1 input-toolbar'>
+          <b-input-group append="o">
+            <b-form-input :value='selectedForcesDirection' @change='setSelectedForceDirection($event)' class="text-right"></b-form-input>
+          </b-input-group>
+          <b-button-group>
+            <b-button @click='setSelectedForceDirection()'>Apply</b-button>
+          </b-button-group>
+        </b-button-toolbar>
+        <b-button class='m-1' @click='removeSelectedForces'>Remove</b-button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -15,8 +88,12 @@ const { Application, Container, Graphics } = PIXI
 export default {
   name: 'Build',
   data: () => ({
+    placeType,
+    jointType,
+
     history: [],
     undoneActions: [],
+    showingResults: false,
     visuals: { // When any of the visuals update, the whole image should be redrawn
       width: 0,
       height: 0,
@@ -48,6 +125,7 @@ export default {
     structures: { // Stores the components that make up the simulations.
       joints: {}, // Joints are stored as key value pairs where the key is the jointId and the value is the point information
       members: new MemberGraph(),
+      internalForces: {},
       loads: {} // Forces take the key of their joint and have a value of their force
     },
 
@@ -106,6 +184,78 @@ export default {
     },
     mousePoint () {
       return this.pixToPoint(this.interactions.mousePos)
+    },
+    jointSelected () {
+      return this.selections.joints.length > 0 && (this.interactions.placeType === placeType.SELECTING || this.interactions.placeType === placeType.JOINT)
+    },
+    selectedJointsType () {
+      if (this.selections.joints.length < 1) {
+        return 'Type'
+      }
+      const currType = this.structures.joints[this.selections.joints[0]].type
+      for (const jointId of this.selections.joints) {
+        const newType = this.structures.joints[jointId].type
+        if (currType !== newType) {
+          return 'Type'
+        }
+      }
+      return currType
+    },
+    memberSelected () {
+      if (!(this.interactions.placeType === placeType.SELECTING || this.interactions.placeType === placeType.MEMBER)) {
+        return false
+      }
+      return this.selectedMembers.length > 0
+    },
+    selectedMembers () {
+      const { joints } = this.selections
+      const members = []
+      for (const member of this.structures.members.getAllMembers()) {
+        if (joints.indexOf(member[0]) > -1 && joints.indexOf(member[1]) > -1) {
+          members.push(member)
+        }
+      }
+      console.log('Selected members: ', members)
+      return members
+    },
+    forceSelected () {
+      return Object.keys(this.selectedForces).length > 0 && (this.interactions.placeType === placeType.SELECTING || this.interactions.placeType === placeType.FORCE)
+    },
+    selectedForces () {
+      return Object.fromEntries(Object.entries(this.structures.loads).filter(([jointId, force]) => this.selections.joints.indexOf(jointId) > -1))
+    },
+    selectedForcesMagnitude () {
+      if (Object.keys(this.selectedForces).length < 1) {
+        return 0
+      }
+      const currMag = Object.values(this.selectedForces)[0].magnitude
+      for (const { magnitude } of Object.values(this.selectedForces)) {
+        if (currMag !== magnitude) {
+          return 0
+        }
+      }
+      return currMag
+    },
+    selectedForcesDirection () {
+      if (Object.keys(this.selectedForces).length < 1) {
+        return 0
+      }
+      const currDir = Object.values(this.selectedForces)[0].direction
+      for (const { direction } of Object.values(this.selectedForces)) {
+        if (currDir !== direction) {
+          return 0
+        }
+      }
+      return currDir
+    },
+    internalMinMax () {
+      const internalForces = Object.values(this.structures.internalForces)
+      if (internalForces.length < 1) {
+        return [0, 0]
+      }
+      const minForce = Math.min(...internalForces)
+      const maxForce = Math.max(...internalForces)
+      return [minForce, maxForce, Math.max(Math.abs(minForce), Math.abs(maxForce))]
     }
   },
   async mounted () {
@@ -131,6 +281,12 @@ export default {
     // Action methods: These are the handlers for actions and act using helpers to directly modify the scene
     // Interaction methods: These add and execute event callbacks for interactions such as drags, mouse clicks, and key presses. These evetually create and execute action objects.
     // Helper methods: These are used by both action and interaction methods to reduce the amount of code in each callback. They modify component data, parse component data, and create actions out of parameters.
+
+    // Used for ui
+    setMode (mode) {
+      this.interactions.placeType = mode
+      this.onAllDeselected()
+    },
 
     // Uses the concept of actions to edit the scene
     executeHelper (action) {
@@ -168,7 +324,7 @@ export default {
           this.aForceRemove(action)
         } else if (action instanceof actions.forces.SETMAG) {
           this.aForceSetMag(action)
-        } else if (action instanceof actions.force.SETDIR) {
+        } else if (action instanceof actions.forces.SETDIR) {
           this.aForceSetDir(action)
         } else {
           throw new actionErrors.NonAction()
@@ -198,6 +354,9 @@ export default {
 
     execute (actions, record = true, clearForward = true) {
       if (Array.isArray(actions)) {
+        if (actions.length < 1) {
+          return
+        }
         for (const action of actions) {
           this.executeHelper(action)
         }
@@ -671,8 +830,8 @@ export default {
         this.visuals.viewX += delta[0]
         this.visuals.viewY += delta[1]
       })
-      // When the user presses backspace with selected joints, we remove those joints
-      this.on({ modes: mode.PRIMARY, placetypes: [placeType.SELECTING, placeType.JOINT], interactions: interactionType.KEYPRESS, keyFilter: ['Backspace'] }, () => {
+      // When the user presses KeyR with selected joints, we remove those joints
+      this.on({ modes: mode.PRIMARY, placetypes: [placeType.SELECTING, placeType.JOINT], interactions: interactionType.KEYPRESS, keyFilter: ['KeyR'] }, () => {
         this.removeSelectedJoints()
       })
       this.on({ modes: mode.PRIMARY, interactions: interactionType.KEYPRESS, keyFilter: ['Escape'] }, () => {
@@ -738,7 +897,7 @@ export default {
           this.onAllDeselected()
         }
       })
-      this.on({ modes: mode.PRIMARY, placetypes: placeType.MEMBER, interactions: interactionType.KEYPRESS, keyFilter: ['Backspace'] }, () => {
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.MEMBER, interactions: interactionType.KEYPRESS, keyFilter: ['KeyR'] }, () => {
         if (this.selections.joints.length === 2) {
           this.removeMember(this.selections.joints[0], this.selections.joints[1])
         }
@@ -760,7 +919,7 @@ export default {
           this.onAllDeselected()
         }
       })
-      this.on({ modes: mode.PRIMARY, placetypes: placeType.FORCE, interactions: interactionType.KEYPRESS, keyFilter: ['Backspace'] }, () => {
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.FORCE, interactions: interactionType.KEYPRESS, keyFilter: ['KeyR'] }, () => {
         if (this.selections.joints.length > 0) {
           this.removeForce(this.selections.joints[0])
         }
@@ -1118,21 +1277,31 @@ export default {
       this.execute(new actions.joints.ADD(point, nextId, jointType.FLOATING))
     },
     removeSelectedJoints () {
+      if (this.selections.joints.length > 0) {
+        const currActions = []
+        // Removing a joint is pretty complicated. We need to do all the actions so they are reversible so we deselect all nodes, remove all force and members, then remove the joint
+        currActions.push(new actions.select.DESELECT(this.selections.joints))
+        const existingLoads = this.selections.joints.map(id => id in this.structures.loads ? { id, force: this.structures.loads[id] } : false).filter(value => value)
+        for (const { id, force } of existingLoads) {
+          const { magnitude, direction } = force
+          currActions.push(new actions.forces.REMOVE(id, magnitude, direction))
+        }
+        const existingMembers = this.structures.members.getAllMembers(this.selections.joints)
+        for (const member of existingMembers) {
+          currActions.push(new actions.members.REMOVE(member[0], member[1]))
+        }
+        for (const jointId of this.selections.joints) {
+          const joint = this.structures.joints[jointId]
+          currActions.push(new actions.joints.REMOVE(joint.pos, jointId, joint.type))
+        }
+        this.execute(currActions)
+      }
+    },
+    setSelectedJointType (type) {
       const currActions = []
-      // Removing a joint is pretty complicated. We need to do all the actions so they are reversible so we deselect all nodes, remove all force and members, then remove the joint
-      currActions.push(new actions.select.DESELECT(this.selections.joints))
-      const existingLoads = this.selections.joints.map(id => id in this.structures.loads ? { id, force: this.structures.loads[id] } : false).filter(value => value)
-      for (const { id, force } of existingLoads) {
-        const { magnitude, direction } = force
-        currActions.push(new actions.forces.REMOVE(id, magnitude, direction))
-      }
-      const existingMembers = this.structures.members.getAllMembers(this.selections.joints)
-      for (const member of existingMembers) {
-        currActions.push(new actions.members.REMOVE(member[0], member[1]))
-      }
       for (const jointId of this.selections.joints) {
         const joint = this.structures.joints[jointId]
-        currActions.push(new actions.joints.REMOVE(joint.pos, jointId, joint.type))
+        currActions.push(new actions.joints.SETTYPE(jointId, joint.type, type))
       }
       this.execute(currActions)
     },
@@ -1142,6 +1311,13 @@ export default {
     },
     removeMember (jointOne, jointTwo) {
       this.execute(new actions.members.REMOVE(jointOne, jointTwo))
+    },
+    removeSelectedMembers () {
+      const currActions = []
+      for (const member of this.selectedMembers) {
+        currActions.push(new actions.members.REMOVE(member[0], member[1]))
+      }
+      this.execute(currActions)
     },
 
     addForce (joint) {
@@ -1154,6 +1330,35 @@ export default {
       const force = this.structures.loads[joint]
       const { magnitude, direction } = force
       this.execute(new actions.forces.REMOVE(joint, magnitude, direction))
+    },
+    removeSelectedForces () {
+      const currActions = []
+      for (const [jointId, force] of Object.entries(this.selectedForces)) {
+        currActions.push(new actions.forces.REMOVE(jointId, force.magnitude, force.direction))
+      }
+      this.execute(currActions)
+    },
+    setSelectedForceMagnitude (magnitude) {
+      if (isNaN(magnitude)) {
+        return false
+      }
+      magnitude = parseFloat(magnitude)
+      const currActions = []
+      for (const [jointId, force] of Object.entries(this.selectedForces)) {
+        currActions.push(new actions.forces.SETMAG(jointId, force.magnitude, magnitude))
+      }
+      this.execute(currActions)
+    },
+    setSelectedForceDirection (direction) {
+      if (isNaN(direction)) {
+        return false
+      }
+      direction = parseFloat(direction)
+      const currActions = []
+      for (const [jointId, force] of Object.entries(this.selectedForces)) {
+        currActions.push(new actions.forces.SETDIR(jointId, force.direction, direction))
+      }
+      this.execute(currActions)
     },
 
     toSlideRule (num) {
@@ -1249,9 +1454,14 @@ export default {
       console.log(componentMatrix, solutionVector)
       const solution = linear.solve(componentMatrix, solutionVector)
       console.log('Solution', solution)
+      const forces = {}
       for (let i = 0; i < members.length; i++) {
+        forces[`${members[i][0]}-${members[i][1]}`] = this.toSlideRule(solution[i])
         console.log('Solution for', members[i], 'is', this.toSlideRule(solution[i]))
       }
+      this.structures.internalForces = forces
+      this.showingResults = true
+      return forces
     },
 
     exportJSON () {
@@ -1270,5 +1480,29 @@ export default {
 .builder {
   width: 100%;
   height: 100%;
+  position: relative;
+  color: #ecf0f1;
+
+  .toolbar {
+    top: 10px;
+    left: 10px;
+    background: none;
+    position: absolute;
+    pointer-events: none;
+    text-align: left;
+
+    * {
+      pointer-events: auto;
+    }
+
+    .input-toolbar {
+      max-width: 12em;
+      flex-wrap: nowrap;
+    }
+
+    .tick-input {
+      max-width: 17em;
+    }
+  }
 }
 </style>
