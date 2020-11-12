@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "core-js": "^3.6.5",
+    "linear-solve": "^1.2.1",
     "node-sass": "^5.0.0",
     "pixi.js": "^5.3.3",
     "sass-loader": "^10.0.5",

@@ -7,6 +7,7 @@
 <script>
 /* eslint-disable no-unused-vars */
 import Vue from 'vue'
+import linear from 'linear-solve'
 import { mode, placeType, interactionType, unit, jointType, Joint, Force, MemberGraph, actions, actionTypes, actionErrors, sleep } from '@/assets/utils'
 import * as PIXI from 'pixi.js'
 const { Application, Container, Graphics } = PIXI
@@ -21,8 +22,8 @@ export default {
       height: 0,
       scale: 50, // Pixels per unit of measurement.
       units: unit.METERS,
-      ySep: 1.5, // These define how many units are between each background tick
-      xSep: 1,
+      ySep: 4.3301, // These define how many units are between each background tick
+      xSep: 2.5,
       scaleMax: 100,
       scaleMin: 20,
       viewX: 0,
@@ -313,11 +314,50 @@ export default {
       this.undo()
     },
     async testAdd () {
-      this.execute(new actions.joints.ADD([-1, 0], 'X', jointType.FLOATING))
-      this.execute(new actions.joints.ADD([0, 2], 'Y', jointType.FLOATING))
-      this.execute(new actions.joints.ADD([1, 0], 'Z', jointType.FLOATING))
-      this.execute(new actions.members.ADD('X', 'Y'))
-      this.execute(new actions.members.ADD('Y', 'Z'))
+      const actionsList = [
+        new actions.joints.ADD([0, 0], 'A', jointType.PIN),
+        new actions.joints.ADD([2.5, 4.3301], 'B', jointType.FLOATING),
+        new actions.joints.ADD([5, 0], 'C', jointType.FLOATING),
+        new actions.joints.ADD([7.5, 4.3301], 'D', jointType.FLOATING),
+        new actions.joints.ADD([10, 0], 'E', jointType.FLOATING),
+        new actions.joints.ADD([12.5, 4.3301], 'F', jointType.FLOATING),
+        new actions.joints.ADD([15, 0], 'G', jointType.FLOATING),
+        new actions.joints.ADD([17.5, 4.3301], 'H', jointType.FLOATING),
+        new actions.joints.ADD([20, 0], 'I', jointType.FLOATING),
+        new actions.joints.ADD([22.5, 4.3301], 'J', jointType.FLOATING),
+        new actions.joints.ADD([25, 0], 'K', jointType.FLOATING),
+        new actions.joints.ADD([27.5, 4.3301], 'L', jointType.FLOATING),
+        new actions.joints.ADD([30, 0], 'M', jointType.PIN),
+        new actions.members.ADD('A', 'B'),
+        new actions.members.ADD('A', 'C'),
+        new actions.members.ADD('B', 'C'),
+        new actions.members.ADD('B', 'D'),
+        new actions.members.ADD('C', 'D'),
+        new actions.members.ADD('C', 'E'),
+        new actions.members.ADD('D', 'E'),
+        new actions.members.ADD('D', 'F'),
+        new actions.members.ADD('E', 'F'),
+        new actions.members.ADD('E', 'G'),
+        new actions.members.ADD('F', 'G'),
+        new actions.members.ADD('F', 'H'),
+        new actions.members.ADD('G', 'H'),
+        new actions.members.ADD('G', 'I'),
+        new actions.members.ADD('H', 'I'),
+        new actions.members.ADD('H', 'J'),
+        new actions.members.ADD('I', 'J'),
+        new actions.members.ADD('I', 'K'),
+        new actions.members.ADD('J', 'K'),
+        new actions.members.ADD('J', 'L'),
+        new actions.members.ADD('K', 'L'),
+        new actions.members.ADD('K', 'M'),
+        new actions.members.ADD('L', 'M'),
+        new actions.forces.ADD('C', 175, -90),
+        new actions.forces.ADD('E', 175, -90),
+        new actions.forces.ADD('G', 175, -90),
+        new actions.forces.ADD('I', 175, -90),
+        new actions.forces.ADD('K', 175, -90)
+      ]
+      this.execute(actionsList)
     },
 
     // Joint Action Handlers
@@ -398,6 +438,48 @@ export default {
       console.log('MEMBER LINEAR AREA NOT IMPLEMENTED')
     },
 
+    aForceAdd (action) {
+      const { jointId, magnitude, direction } = action
+      if (jointId in this.structures.loads) {
+        console.log('Force already exists')
+        throw new actionErrors.Failed(action.constructor.name, 'Joint already has a force on it')
+      }
+      Vue.set(this.structures.loads, jointId, new Force(direction, magnitude))
+    },
+    aForceRemove (action) {
+      const { jointId, magnitude, direction } = action
+      if (!(jointId in this.structures.loads)) {
+        throw new actionErrors.Failed(action.constructor.name, 'Force does not exist')
+      }
+      const force = this.structures.loads[jointId]
+      if (force.magnitude !== magnitude || force.direction !== direction) {
+        throw new actionErrors.Failed(action.constructor.name, 'Force has incorrect magnitude or direction')
+      }
+      Vue.delete(this.structures.loads, jointId)
+    },
+    aForceSetMag (action) {
+      const { jointId, oldMag, newMag } = action
+      if (!(jointId in this.structures.loads)) {
+        throw new actionErrors.Failed(action.constructor.name, 'Force does not exist')
+      }
+      const force = this.structures.loads[jointId]
+      if (force.magnitude !== oldMag) {
+        throw new actionErrors.Failed(action.constructor.name, 'Force has incorrect old magnitude')
+      }
+      Vue.set(this.structures.loads, jointId, new Force(force.direction, newMag))
+    },
+    aForceSetDir (action) {
+      const { jointId, oldDir, newDir } = action
+      if (!(jointId in this.structures.loads)) {
+        throw new actionErrors.Failed(action.constructor.name, 'Force does not exist')
+      }
+      const force = this.structures.loads[jointId]
+      if (force.direction !== oldDir) {
+        throw new actionErrors.Failed(action.constructor.name, 'Force has incorrect old direction')
+      }
+      Vue.set(this.structures.loads, jointId, new Force(newDir, force.magnitude))
+    },
+
     // Selection Action Handlers
     aSelect (action) {
       const { ids } = action
@@ -439,8 +521,7 @@ export default {
         if (this.interactions.heldKeys.indexOf(e.code) === -1) {
           this.interactions.heldKeys.push(e.code)
         }
-        // this.onKeyDown(e.code)
-        return this.onKeyDownV2(e)
+        return this.onKeyDown(e)
       })
 
       this.pixi.app.view.addEventListener('wheel', e => {
@@ -453,117 +534,114 @@ export default {
       this.pixi.app.view.addEventListener('mousemove', e => {
         const { movementX: dx, movementY: dy } = e
         const { layerX: x, layerY: y } = e
-        // this.onMove([dx, dy], [x, y])
-        this.onMouseMoveV2([dx, dy], [x, y])
+        this.onMouseMove([dx, dy], [x, y])
       })
 
-      this.pixi.app.renderer.plugins.interaction.on('mousedown', e => {
-        // this.onMouseDown(e, false)
-        this.onMouseDownV2(e, false)
-      })
-      this.pixi.app.renderer.plugins.interaction.on('mouseup', e => {
-        // this.onMouseUp(e, false)
-        this.onMouseUpV2(e, false)
-      })
-      this.pixi.app.renderer.plugins.interaction.on('rightdown', e => {
-        // this.onMouseDown(e, true)
-        this.onMouseDownV2(e, true)
-      })
-      this.pixi.app.renderer.plugins.interaction.on('rightup', e => {
-        // this.onMouseUp(e, true)
-        this.onMouseUpV2(e, true)
-      })
+      this.pixi.app.renderer.plugins.interaction.on('mousedown', e => this.onMouseDown(e, false))
+      this.pixi.app.renderer.plugins.interaction.on('mouseup', e => this.onMouseUp(e, false))
+      this.pixi.app.renderer.plugins.interaction.on('rightdown', e => this.onMouseDown(e, true))
+      this.pixi.app.renderer.plugins.interaction.on('rightup', e => this.onMouseUp(e, true))
     },
-    onKeyDown (code) {
-      if (this.mode === mode.PRIMARY) {
-        if (code === 'Backspace') {
-          this.removeSelectedJoints()
-        }
-      } else if (this.mode === mode.SECONDARY) {
-      } else if (this.mode === mode.COMMAND) {
-        if (code === 'KeyZ') {
-          if (this.holdingKey('ShiftLeft')) {
-            this.redo()
-          } else {
-            this.undo()
+    onKeyDown (e) {
+      const callbacks = this.interactions.callbacks
+      const { code } = e
+      try {
+        let prevent = false
+        const keyCallbacks = callbacks[this.mode][this.interactions.placeType][interactionType.KEYPRESS]
+        for (const { keyFilter, callback } of keyCallbacks) {
+          if (!keyFilter || keyFilter.indexOf(code) > -1) {
+            callback({ keyCode: code, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart })
+            prevent = true
           }
         }
+        if (prevent) {
+          e.preventDefault()
+          return false
+        }
+      } catch (err) {
+        if (!(err instanceof TypeError)) {
+          // Then this was a problem where a callback did not exist
+          throw err
+        }
       }
+      return true
     },
     onMouseDown (e, rightButton) {
-      // To keep consistent structure, we order our if statments as 'mousebutton' -> 'mode' -> 'specifics'
+      const callbacks = this.interactions.callbacks
       this.interactions.dragging = false
+      this.interactions.dragStart = this.mousePoint
       if (rightButton) {
-        if (this.mode === mode.PRIMARY) {
-        } else if (this.mode === mode.SECONDARY) {
-        } else if (this.mode === mode.COMMAND) {
-        }
+        this.interactions.rightMouseDown = true
       } else {
         this.interactions.leftMouseDown = true
-        this.interactions.dragStart = this.mousePoint
-        if (this.mode === mode.PRIMARY) {
-        } else if (this.mode === mode.SECONDARY) {
-        } else if (this.mode === mode.COMMAND) {
+      }
+      try {
+        const interType = rightButton ? interactionType.RIGHTCLICKDOWN : interactionType.LEFTCLICKDOWN
+        for (const { keyFilter, callback } of callbacks[this.mode][this.interactions.placeType][interType]) {
+          callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart })
+        }
+      } catch (err) {
+        if (!(err instanceof TypeError)) {
+          // Then this was a problem where a callback did not exist
+          throw err
         }
       }
-      this.redraw()
     },
     onMouseUp (e, rightButton) {
-      // To keep consistent structure, we order our if statments as 'mousebutton' -> 'mode' -> 'specifics'
-      // First we do things that we always do to update the interactions
-      const { dragging } = this.interactions
-      this.interactions.leftMouseDown = false
-      if (rightButton) {
-        if (this.mode === mode.PRIMARY) {
-          if (!dragging) {
-            // Then we want to place a new joint
-            const placePoint = this.pointToNearest(this.mousePoint)
-            this.addJoint(placePoint)
-          }
-        } else if (this.mode === mode.SECONDARY) {
-        } else if (this.mode === mode.COMMAND) {
+      const callbacks = this.interactions.callbacks
+      const dragEnd = this.mousePoint
+      try {
+        let interType
+        if (this.interactions.dragging) {
+          interType = rightButton ? interactionType.RIGHTDRAGUP : interactionType.LEFTDRAGUP
+        } else {
+          interType = rightButton ? interactionType.RIGHTCLICK : interactionType.LEFTCLICK
         }
-      } else {
-        if (this.mode === mode.PRIMARY) {
-          if (dragging) {
-            // Then we just selected an area
-            const selected = this.getJointsWithin(this.interactions.dragStart, this.mousePoint, Object.keys(this.structures.joints))
-            this.onJointsSelected(selected)
-          } else {
-            // Then we just clicked to get a joint
-            const selected = this.getClosestJoint(this.mousePoint, Object.keys(this.structures.joints), 1)
-            if (!selected) {
-              // Then the user clicked away from all points
-              this.onAllDeselected()
-            } else {
-              // Then the user clicked on a joint. If it is already selected we remove it.
-              this.onJointsSelected([selected], true)
-            }
-          }
-        } else if (this.mode === mode.SECONDARY) {
-        } else if (this.mode === mode.COMMAND) {
+        const upCallbacks = callbacks[this.mode][this.interactions.placeType][interType]
+        for (const { keyFilter, callback } of upCallbacks) {
+          callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart })
+        }
+      } catch (err) {
+        if (!(err instanceof TypeError)) {
+          // Then this was a problem where a callback did not exist
+          throw err
         }
       }
+      if (rightButton) {
+        this.interactions.rightMouseDown = false
+      } else {
+        this.interactions.leftMouseDown = false
+      }
+      // TODO: Maybe change this so it only makes dragging false if both mouse sides are up
       this.interactions.dragging = false
-      this.redraw()
     },
-    onMove ([dx, dy], [x, y]) {
-      // To keep consistent structure, we order our if statments as mode' -> 'specifics'
-      // First we do things that we always do to update the interactions
+    onMouseMove ([dx, dy], [x, y]) {
+      const callbacks = this.interactions.callbacks
       this.interactions.mousePos = [x, y]
-      if (this.interactions.leftMouseDown) {
+      if (this.interactions.leftMouseDown || this.interactions.rightMouseDown) {
         const dSqr = (this.mousePoint[0] - this.interactions.dragStart[0]) ** 2 + (this.mousePoint[1] - this.interactions.dragStart[1]) ** 2
         if (dSqr > 0.01) {
           this.interactions.dragging = true
         }
       }
       const { dragging } = this.interactions
-      if (this.mode === mode.PRIMARY) {
+      try {
         if (dragging) {
-          this.drawSelectionGraph()
+          if (this.interactions.leftMouseDown) {
+            for (const { keyFilter, callback } of callbacks[this.mode][this.interactions.placeType][interactionType.LEFTDRAG]) {
+              callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart, delta: [dx, dy] })
+            }
+          }
+          if (this.interactions.rightMouseDown) {
+            for (const { keyFilter, callback } of callbacks[this.mode][this.interactions.placeType][interactionType.RIGHTDRAG]) {
+              callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart, delta: [dx, dy] })
+            }
+          }
         }
-      } else if (this.mode === mode.SECONDARY) {
-      } else if (this.mode === mode.COMMAND) {
+      } catch (err) {
+        if (!(err instanceof TypeError)) {
+          throw err
+        }
       }
     },
     addInteractionListeners () {
@@ -577,8 +655,11 @@ export default {
         } else if (keyCode === 'KeyS') {
           this.interactions.placeType = placeType.SELECTING
         }
+        this.onAllDeselected()
       })
-      this.on({ modes: mode.PRIMARY, placetypes: placeType.JOINT, interactions: interactionType.LEFTCLICK }, ({ mousePoint }) => this.addJoint(this.pointToNearest(mousePoint)))
+      this.on({ modes: mode.COMMAND, interactions: interactionType.KEYPRESS, keyFilter: ['KeyE'] }, ({ keyCode }) => {
+        this.getInternalForces()
+      })
       this.on({ modes: mode.COMMAND, interactions: interactionType.KEYPRESS, keyFilter: ['KeyZ'] }, () => {
         if (this.holdingKey('ShiftLeft')) {
           this.redo()
@@ -590,6 +671,20 @@ export default {
         this.visuals.viewX += delta[0]
         this.visuals.viewY += delta[1]
       })
+      // When the user presses backspace with selected joints, we remove those joints
+      this.on({ modes: mode.PRIMARY, placetypes: [placeType.SELECTING, placeType.JOINT], interactions: interactionType.KEYPRESS, keyFilter: ['Backspace'] }, () => {
+        this.removeSelectedJoints()
+      })
+      this.on({ modes: mode.PRIMARY, interactions: interactionType.KEYPRESS, keyFilter: ['Escape'] }, () => {
+        this.onAllDeselected()
+      })
+      this.addSelectionListeners()
+      this.addJointListeners()
+      this.addMemberListeners()
+      this.addForceListeners()
+    },
+    addSelectionListeners () {
+      // When the user left clicks near a joint, we select it. If it is selected, we deselect it. If there is no near point, we deselect all.
       this.on({ modes: mode.PRIMARY, placetypes: placeType.SELECTING, interactions: interactionType.LEFTCLICK }, ({ mousePoint }) => {
         const selected = this.getClosestJoint(mousePoint, Object.keys(this.structures.joints), 1)
         if (!selected) {
@@ -600,22 +695,76 @@ export default {
           this.onJointsSelected([selected], true)
         }
       })
+      // When the user stopps dragging while selecting, we select all joints in the drag area
       this.on({ modes: mode.PRIMARY, placetypes: placeType.SELECTING, interactions: interactionType.LEFTDRAGUP }, ({ dragStart, mousePoint }) => {
         const selected = this.getJointsWithin(this.interactions.dragStart, this.mousePoint, Object.keys(this.structures.joints))
         this.onJointsSelected(selected)
         this.drawSelectionGraph()
       })
+      // When the user drags while selecting, we draw a selection box
       this.on({ modes: mode.PRIMARY, placetypes: placeType.SELECTING, interactions: interactionType.LEFTDRAG }, ({ dragStart, mousePoint }) => {
         this.drawSelectionGraph(dragStart, mousePoint)
       })
-      this.on({ modes: mode.PRIMARY, placetypes: placeType.SELECTING, interactions: interactionType.KEYPRESS, keyFilter: ['Backspace'] }, () => {
-        this.removeSelectedJoints()
+    },
+    addJointListeners () {
+      // When the user left clicks, we palce a joint at the nearest grid mark. If there is already a joint there, select it. If it is already selected, deselect it.
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.JOINT, interactions: interactionType.LEFTCLICK }, ({ mousePoint }) => {
+        const closest = this.getClosestJoint(mousePoint, Object.keys(this.structures.joints), 1)
+        if (!closest) {
+          this.addJoint(this.pointToNearest(mousePoint))
+          return
+        }
+        if (this.selections.joints.indexOf(closest) > -1) {
+          this.onJointsSelected([closest], true)
+        } else {
+          this.onMarchingSelect(closest, 1)
+        }
       })
-      // this.on({ modes: [mode.PRIMARY, mode.SECONDARY], interactions: interactionType.RIGHTDRAG }, res => {
-      //   console.log('Right Drag: ', res)
-      // })
-      // this.on({ mode: mode.PRIMARY, placetype: placeType.SELECTING,  })
-      console.log(this.interactions.callbacks)
+    },
+    addMemberListeners () {
+      // When the user left clicks, we do a marching select of size 2. If 2 are selected afterwards, we palce a member between them
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.MEMBER, interactions: interactionType.LEFTCLICK }, ({ mousePoint }) => {
+        const closest = this.getClosestJoint(mousePoint, Object.keys(this.structures.joints), 1)
+        if (closest) {
+          if (this.selections.joints.indexOf(closest) > -1) {
+            this.onJointsSelected([closest], true)
+          } else {
+            this.onMarchingSelect(closest, 2)
+            if (this.selections.joints.length === 2) {
+              this.addMember(this.selections.joints[0], this.selections.joints[1])
+            }
+          }
+        } else {
+          this.onAllDeselected()
+        }
+      })
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.MEMBER, interactions: interactionType.KEYPRESS, keyFilter: ['Backspace'] }, () => {
+        if (this.selections.joints.length === 2) {
+          this.removeMember(this.selections.joints[0], this.selections.joints[1])
+        }
+      })
+    },
+    addForceListeners () {
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.FORCE, interactions: interactionType.LEFTCLICK }, ({ mousePoint }) => {
+        const closest = this.getClosestJoint(mousePoint, Object.keys(this.structures.joints), 1)
+        if (closest) {
+          if (this.selections.joints.indexOf(closest) > -1) {
+            this.onJointsSelected([closest], true)
+          } else {
+            this.onMarchingSelect(closest, 1)
+            if (!(closest in this.structures.loads)) {
+              this.addForce(closest)
+            }
+          }
+        } else {
+          this.onAllDeselected()
+        }
+      })
+      this.on({ modes: mode.PRIMARY, placetypes: placeType.FORCE, interactions: interactionType.KEYPRESS, keyFilter: ['Backspace'] }, () => {
+        if (this.selections.joints.length > 0) {
+          this.removeForce(this.selections.joints[0])
+        }
+      })
     },
 
     // New mouse interaction methods
@@ -651,108 +800,6 @@ export default {
       callbacks[mode][placetype][interaction] = callbacks[mode][placetype][interaction] || []
       this.interactions.callbacks[mode][placetype][interaction].push({ keyFilter, callback })
     },
-    onKeyDownV2 (e) {
-      const callbacks = this.interactions.callbacks
-      const { code } = e
-      try {
-        let prevent = false
-        const keyCallbacks = callbacks[this.mode][this.interactions.placeType][interactionType.KEYPRESS]
-        for (const { keyFilter, callback } of keyCallbacks) {
-          if (!keyFilter || keyFilter.indexOf(code) > -1) {
-            callback({ keyCode: code, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart })
-            prevent = true
-          }
-        }
-        if (prevent) {
-          e.preventDefault()
-          return false
-        }
-      } catch (err) {
-        if (!(err instanceof TypeError)) {
-          // Then this was a problem where a callback did not exist
-          throw err
-        }
-      }
-      return true
-    },
-    onMouseDownV2 (e, rightButton) {
-      const callbacks = this.interactions.callbacks
-      this.interactions.dragging = false
-      this.interactions.dragStart = this.mousePoint
-      if (rightButton) {
-        this.interactions.rightMouseDown = true
-      } else {
-        this.interactions.leftMouseDown = true
-      }
-      try {
-        const interType = rightButton ? interactionType.RIGHTCLICKDOWN : interactionType.LEFTCLICKDOWN
-        for (const { keyFilter, callback } of callbacks[this.mode][this.interactions.placeType][interType]) {
-          callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart })
-        }
-      } catch (err) {
-        if (!(err instanceof TypeError)) {
-          // Then this was a problem where a callback did not exist
-          throw err
-        }
-      }
-    },
-    onMouseUpV2 (e, rightButton) {
-      const callbacks = this.interactions.callbacks
-      const dragEnd = this.mousePoint
-      try {
-        let interType
-        if (this.interactions.dragging) {
-          interType = rightButton ? interactionType.RIGHTDRAGUP : interactionType.LEFTDRAGUP
-        } else {
-          interType = rightButton ? interactionType.RIGHTCLICK : interactionType.LEFTCLICK
-        }
-        const upCallbacks = callbacks[this.mode][this.interactions.placeType][interType]
-        for (const { keyFilter, callback } of upCallbacks) {
-          callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart })
-        }
-      } catch (err) {
-        if (!(err instanceof TypeError)) {
-          // Then this was a problem where a callback did not exist
-          throw err
-        }
-      }
-      if (rightButton) {
-        this.interactions.rightMouseDown = false
-      } else {
-        this.interactions.leftMouseDown = false
-      }
-      // TODO: Maybe change this so it only makes dragging false if both mouse sides are up
-      this.interactions.dragging = false
-    },
-    onMouseMoveV2 ([dx, dy], [x, y]) {
-      const callbacks = this.interactions.callbacks
-      this.interactions.mousePos = [x, y]
-      if (this.interactions.leftMouseDown || this.interactions.rightMouseDown) {
-        const dSqr = (this.mousePoint[0] - this.interactions.dragStart[0]) ** 2 + (this.mousePoint[1] - this.interactions.dragStart[1]) ** 2
-        if (dSqr > 0.01) {
-          this.interactions.dragging = true
-        }
-      }
-      const { dragging } = this.interactions
-      try {
-        if (dragging) {
-          if (this.interactions.leftMouseDown) {
-            for (const { keyFilter, callback } of callbacks[this.mode][this.interactions.placeType][interactionType.LEFTDRAG]) {
-              callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart, delta: [dx, dy] })
-            }
-          }
-          if (this.interactions.rightMouseDown) {
-            for (const { keyFilter, callback } of callbacks[this.mode][this.interactions.placeType][interactionType.RIGHTDRAG]) {
-              callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart, delta: [dx, dy] })
-            }
-          }
-        }
-      } catch (err) {
-        if (!(err instanceof TypeError)) {
-          throw err
-        }
-      }
-    },
 
     // Helpers for selecting
     onJointsSelected (joints, deselect = false) {
@@ -769,6 +816,16 @@ export default {
       this.execute([
         new actions.select.SELECT(toSelect),
         new actions.select.DESELECT(toDeselect)
+      ])
+    },
+    onMarchingSelect (joint, size = 2) {
+      // Makes the selection act as a queue with max length = {{ size }}
+      const { joints: currentSelection } = this.selections
+      const toRemove = Math.max(0, currentSelection.length - size + 1)
+      const removedJoints = currentSelection.slice(0, toRemove)
+      this.execute([
+        new actions.select.DESELECT(removedJoints),
+        new actions.select.SELECT([joint])
       ])
     },
     onAllDeselected () {
@@ -863,6 +920,62 @@ export default {
     },
     drawLoadsGraph () {
       // Renders the loads based of off the structures.loads graph
+      const { loadsGraph } = this.pixi
+      const { loads } = this.structures
+      loadsGraph.clear()
+
+      const magnitudes = Object.values(loads).map(force => force.magnitude)
+      const maxMag = Math.max(...magnitudes)
+      const minMag = Math.min(...magnitudes)
+      const maxDist = this.jointRadius * 6
+      const minDist = this.jointRadius * 3
+      const flangeLength = this.jointRadius
+      function getLength (force) {
+        if (magnitudes.length < 2 || maxMag === minMag) {
+          return (maxDist + minDist) / 2
+        }
+        const mag = force.magnitude
+        // Linearly interpolate between maxMag and minMag and self.radius * 1.2 and self.radius * 2.5
+        return (((mag - minMag) / (maxMag - minMag)) * (maxDist - minDist)) + minDist
+      }
+      function flangeEnd (direction, startX, startY) {
+        const dx = flangeLength * Math.cos(direction * (Math.PI / 180))
+        const dy = -1 * flangeLength * Math.sin(direction * (Math.PI / 180))
+        const flangeX = startX + dx
+        const flangeY = startY + dy
+        return [flangeX, flangeY]
+      }
+
+      for (const [jointId, force] of Object.entries(loads)) {
+        if (this.selections.joints.indexOf(jointId) > -1) {
+          loadsGraph.lineStyle(this.jointRadius / 4, 0x2ecc71, 1)
+        } else {
+          loadsGraph.lineStyle(this.jointRadius / 4, 0x8e44ad, 1)
+        }
+        const joint = this.structures.joints[jointId]
+
+        const [x, y] = this.pointToPix(joint.pos)
+        const length = getLength(force)
+        const dx = length * Math.cos(force.direction * (Math.PI / 180))
+        const dy = -1 * length * Math.sin(force.direction * (Math.PI / 180))
+
+        const endX = x + dx
+        const endY = y + dy
+
+        loadsGraph.moveTo(x, y)
+        loadsGraph.lineTo(endX, endY)
+
+        const flangeOneDir = force.direction - 40 + 180
+        const flangeTwoDir = force.direction + 40 + 180
+
+        const [flangeOneX, flangeOneY] = flangeEnd(flangeOneDir, endX, endY)
+        const [flangeTwoX, flangeTwoY] = flangeEnd(flangeTwoDir, endX, endY)
+
+        loadsGraph.moveTo(endX, endY)
+        loadsGraph.lineTo(flangeOneX, flangeOneY)
+        loadsGraph.moveTo(endX, endY)
+        loadsGraph.lineTo(flangeTwoX, flangeTwoY)
+      }
     },
     drawBackgroundGraph () {
       const { backgroundGraph } = this.pixi
@@ -1006,13 +1119,149 @@ export default {
     },
     removeSelectedJoints () {
       const currActions = []
+      // Removing a joint is pretty complicated. We need to do all the actions so they are reversible so we deselect all nodes, remove all force and members, then remove the joint
+      currActions.push(new actions.select.DESELECT(this.selections.joints))
+      const existingLoads = this.selections.joints.map(id => id in this.structures.loads ? { id, force: this.structures.loads[id] } : false).filter(value => value)
+      for (const { id, force } of existingLoads) {
+        const { magnitude, direction } = force
+        currActions.push(new actions.forces.REMOVE(id, magnitude, direction))
+      }
+      const existingMembers = this.structures.members.getAllMembers(this.selections.joints)
+      for (const member of existingMembers) {
+        currActions.push(new actions.members.REMOVE(member[0], member[1]))
+      }
       for (const jointId of this.selections.joints) {
         const joint = this.structures.joints[jointId]
         currActions.push(new actions.joints.REMOVE(joint.pos, jointId, joint.type))
       }
       this.execute(currActions)
+    },
+
+    addMember (jointOne, jointTwo) {
+      this.execute(new actions.members.ADD(jointOne, jointTwo))
+    },
+    removeMember (jointOne, jointTwo) {
+      this.execute(new actions.members.REMOVE(jointOne, jointTwo))
+    },
+
+    addForce (joint) {
+      this.execute(new actions.forces.ADD(joint, 1, -90))
+    },
+    removeForce (joint) {
+      if (!(joint in this.structures.loads)) {
+        return false
+      }
+      const force = this.structures.loads[joint]
+      const { magnitude, direction } = force
+      this.execute(new actions.forces.REMOVE(joint, magnitude, direction))
+    },
+
+    toSlideRule (num) {
+      if (num === 0) {
+        return 0
+      }
+      const shifted = num * 10 ** (Math.ceil(Math.log10(1 / num)))
+      const prec = Math.floor(shifted) === 1 ? 4 : 3
+      return parseFloat(num.toPrecision(prec))
+    },
+    forceComponentMatrix (unknowns, joints) {
+      // Gets the matrix of force components cooresponding to the linear equations for x and y static structure
+      const matrixSize = [2 * joints.length, unknowns.length]
+      const matrix = new Array(matrixSize[0]).fill(0).map(a => new Array(matrixSize[1]).fill(0))
+      for (let i = 0; i < unknowns.length; i++) {
+        // This tells us which joints are connected by the member. We then compute the components of each.
+        const unknown = unknowns[i]
+        const jointOne = this.structures.joints[unknown[0]]
+        const jointTwo = this.structures.joints[unknown[1]]
+        const displacement = [jointTwo.pos[0] - jointOne.pos[0], jointTwo.pos[1] - jointOne.pos[1]]
+        const length = Math.sqrt(displacement[0] ** 2 + displacement[1] ** 2)
+        const xComponent = displacement[0] / length
+        const yComponent = displacement[1] / length
+        for (const unkownJoint of unknown) {
+          // Place the components in the correct location with the correct factor
+          const factor = unknown.indexOf(unkownJoint) === 0 ? 1 : -1
+          const jointIndex = joints.indexOf(unkownJoint)
+          const xComponentLocation = [2 * jointIndex + 1, i]
+          const yComponentLocation = [2 * jointIndex, i]
+          matrix[xComponentLocation[0]][xComponentLocation[1]] = xComponent * factor
+          matrix[yComponentLocation[0]][yComponentLocation[1]] = yComponent * factor
+        }
+      }
+      return matrix
+    },
+    computeReactionForce (referenceJoint, reactionJoint) {
+      // We have to iterate over all forces and sum their moments then divide by the distance to the reaction joint.
+      // The reaction joint always provides a force to counter all bridge movement.
+      // TODO: MAKE THIS WORK WITH HORIZONTAL NET FORCES
+      let totalMoment = 0
+      const reference = this.structures.joints[referenceJoint]
+      const loads = this.structures.loads
+      for (const [jointId, force] of Object.entries(loads)) {
+        const joint = this.structures.joints[jointId]
+        const delta = [joint.pos[0] - reference.pos[0], joint.pos[1] - reference.pos[1]]
+        const mag = force.magnitude
+        const dir = force.direction * (Math.PI / 180)
+        const distance = Math.sqrt(delta[0] ** 2 + delta[1] ** 2)
+        const angleDiff = dir - Math.atan2(delta[1], delta[0])
+        totalMoment += mag * distance * Math.sin(angleDiff)
+      }
+      const reaction = this.structures.joints[reactionJoint]
+      const reactionDisplacement = [reaction.pos[0] - reference.pos[0], reaction.pos[1] - reference.pos[1]]
+      // Since we are currently assuming the reaction force is directly up, lets just take a shortcut and use F*(delta[0])=M
+      const reactionForce = totalMoment / reactionDisplacement[0]
+      return new Force(90, -1 * reactionForce)
+    },
+    computeReactionForces () {
+      const pinnedJoints = Object.fromEntries(Object.entries(this.structures.joints).filter(([id, joint]) => joint.type === jointType.PIN))
+      if (Object.keys(pinnedJoints).length !== 2) {
+        throw new Error('Incorrect number of pinned joints')
+      }
+      const res = {}
+      res[Object.keys(pinnedJoints)[1]] = this.computeReactionForce(...Object.keys(pinnedJoints))
+      res[Object.keys(pinnedJoints).reverse()[1]] = this.computeReactionForce(...Object.keys(pinnedJoints).reverse())
+      return res
+    },
+    forceSolutionVector (joints) {
+      const reactionForces = this.computeReactionForces()
+      const solutions = new Array(joints.length * 2).fill(0)
+      console.log(reactionForces, solutions)
+      for (let i = 0; i < joints.length; i++) {
+        const jointId = joints[i]
+        // Note that force components should go y then x
+        if (jointId in reactionForces) {
+          const force = reactionForces[jointId]
+          solutions[2 * i] -= force.yComponent
+          solutions[2 * i + 1] -= force.xComponent
+        }
+        if (jointId in this.structures.loads) {
+          const force = this.structures.loads[jointId]
+          solutions[2 * i] -= force.yComponent
+          solutions[2 * i + 1] -= force.xComponent
+        }
+      }
+      return solutions
+    },
+    getInternalForces () {
+      const members = this.structures.members.getAllMembers()
+      const joints = Object.keys(this.structures.joints)
+      const componentMatrix = this.forceComponentMatrix(members, joints)
+      const solutionVector = this.forceSolutionVector(joints)
+      console.log(componentMatrix, solutionVector)
+      const solution = linear.solve(componentMatrix, solutionVector)
+      console.log('Solution', solution)
+      for (let i = 0; i < members.length; i++) {
+        console.log('Solution for', members[i], 'is', this.toSlideRule(solution[i]))
+      }
+    },
+
+    exportJSON () {
     }
   }
+  // I had an idea of how to do a solver. The problem is that it is difficult to know how to set up the variables of the matrix equation.
+  // In two steps:
+  // Get all the connection in alphabetical order. I already have a function for this in the member list.
+  // For each of these connections, for each of the forces in the connection, compute the components and place them at index*2 and index*2-1 for x and y in the matrix at the same column as the connection.
+  // With this approach, we can probably just use https://github.com/lovasoa/linear-solve for a simple elimination and get the answer in browser
 }
 /* eslint-disable no-unused-vars */
 </script>

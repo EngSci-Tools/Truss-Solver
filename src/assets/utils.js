@@ -50,6 +50,13 @@ export class Force {
   }
 
   // TODO: Get force components in here
+  get xComponent () {
+    return this.magnitude * Math.cos(this.direction * (Math.PI / 180))
+  }
+
+  get yComponent () {
+    return this.magnitude * Math.sin(this.direction * (Math.PI / 180))
+  }
 }
 
 // Lets play the game of how many times I misspell adjacent
@@ -127,11 +134,12 @@ export class MemberGraph {
     this.removeAdjacent(jointTwo, jointOne)
   }
 
-  getAllMembers () {
+  getAllMembers (jointFilter = []) {
     // Returns a list of joint-joint pairs
     const reviewedJoints = [] // Contains all jointIds that have already been added
     const pairs = []
-    for (const [jointId, adjacents] of Object.entries(this.graph)) {
+    const joints = Object.entries(this.graph).filter(joint => jointFilter.length === 0 || jointFilter.indexOf(joint[0]) > -1)
+    for (const [jointId, adjacents] of joints) {
       for (const adjacent of adjacents) {
         if (reviewedJoints.indexOf(adjacent) < 0) {
           // Then we have not already added this joint
@@ -323,10 +331,78 @@ const members = {
 
 class ForceAction extends Action { }
 const forces = {
-  ADD: null,
-  REMOVE: null,
-  SETMAG: null,
-  SETDIR: null
+  ADD: class AddForce extends ForceAction {
+    jointId = undefined
+    magnitude = undefined
+    direction = -90
+    constructor (joint, magnitude, direction = -90) {
+      super()
+      if (joint == null || magnitude == null || direction == null) {
+        throw new MalformedActionError(this.constructor.name)
+      }
+      this.jointId = joint
+      this.magnitude = magnitude
+      this.direction = direction
+    }
+
+    reverse () {
+      return new forces.REMOVE(this.jointId, this.magnitude, this.direction)
+    }
+  },
+  REMOVE: class RemoveForce extends ForceAction {
+    jointId = undefined
+    magnitude = undefined
+    direction = undefined
+    constructor (joint, magnitude, direction) {
+      super()
+      if (joint == null || magnitude == null || direction == null) {
+        throw new MalformedActionError(this.constructor.name)
+      }
+      this.jointId = joint
+      this.magnitude = magnitude
+      this.direction = direction
+    }
+
+    reverse () {
+      return new forces.ADD(this.jointId, this.magnitude, this.direction)
+    }
+  },
+  SETMAG: class SetForceMagnitude extends ForceAction {
+    jointId = undefined
+    oldMag = undefined
+    newMag = undefined
+    constructor (joint, oldMag, newMag) {
+      super()
+      if (joint == null || oldMag == null || newMag == null) {
+        throw new MalformedActionError(this.constructor.name)
+      }
+      this.jointId = joint
+      this.oldMag = oldMag
+      this.newMag = newMag
+    }
+
+    reverse () {
+      return new forces.SETMAG(this.jointId, this.newMag, this.oldMag)
+    }
+  },
+  SETDIR: class SetForceDirection extends ForceAction {
+    jointId = undefined
+    oldDir = undefined
+    newDir = undefined
+    constructor (joint, oldDir, newDir) {
+      super()
+      if (joint == null || oldDir == null || newDir == null) {
+        throw new MalformedActionError(this.constructor.name)
+      }
+      this.jointId = joint
+      this.oldDir = oldDir
+      this.newDir = newDir
+    }
+
+    reverse () {
+      return new forces.SETDIR(this.jointId, this.newDir, this.oldDir)
+    }
+  }
 }
 
 class SelectAction extends Action { }
