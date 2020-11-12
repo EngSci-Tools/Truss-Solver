@@ -42,7 +42,7 @@
       <b-input-group class='mx-1 mt-1 tick-input' append="m" prepend='X Tick Seperation'>
           <b-form-input :value='visuals.xSep' @change='visuals.xSep = $event' class="text-right"></b-form-input>
         </b-input-group>
-      <b-button class='m-1 mt-1' @click='getInternalForces' :variant='calculatedFailed ? "danger" : ""'>{{ calculatedFailed ? calculatedFailedMessage : 'Caculate' }}</b-button>
+      <b-button class='m-1 mt-1' @click='getInternalForces()' :variant='calculatedFailed ? "danger" : ""'>{{ calculatedFailed ? calculatedFailedMessage : 'Caculate' }}</b-button>
       <div v-if='jointSelected'>
         <h4 class='m-1 mt-3'>Joints:</h4>
         <b-dropdown class='mx-1' :text='selectedJointsType'>
@@ -413,6 +413,7 @@ export default {
       }
       this.redraw()
       this.toQueryString()
+      this.getInternalForces()
     },
 
     undo () {
@@ -628,6 +629,14 @@ export default {
       }
       // Then we have two joints that we can connect. Let's create a member
       this.structures.members.addMember(jointOne, jointTwo)
+      // And then create some text that we can view it's forces with
+      const textId = [jointOne, jointTwo].sort().join('-')
+      if (!(textId in this.pixi.memberText)) {
+        const text = new Text('', { fontFamily: 'Arial', fontSize: this.jointRadius, fill: 0xe74c3c, align: 'center' })
+        text.anchor.set(0.5, 1.5)
+        this.pixi.textContainer.addChild(text)
+        Vue.set(this.pixi.memberText, textId, text)
+      }
     },
     aMemberRemove (action) {
       const { jointOne, jointTwo, linearArea } = action
@@ -638,6 +647,11 @@ export default {
         throw new actionErrors.Failed(action.constructor.name, `Joint ${jointTwo} not in joints`)
       }
       // Then we have two joints that may or may not be connected. Let's remove it if it exists
+      const textId = [jointOne, jointTwo].sort().join('-')
+      if (textId in this.pixi.memberText) {
+        this.pixi.memberText[textId].destroy()
+        Vue.delete(this.pixi.memberText, textId)
+      }
       this.structures.members.removeMember(jointOne, jointTwo)
     },
     aMemberSetLinArea (action) {
@@ -1110,16 +1124,35 @@ export default {
     },
     drawMemberGraph () {
       // Renders the members based of off the structures.members graph
-      const { memberGraph } = this.pixi
+      const { memberGraph, memberText } = this.pixi
       const { members } = this.structures
+      const { internalForces: forces } = this.structures
       memberGraph.clear()
 
       for (const [idOne, idTwo] of members.getAllMembers()) {
+        const textId = [idOne, idTwo].sort().join('-')
+        const text = memberText[textId]
         const jointOne = this.structures.joints[idOne]
         const jointTwo = this.structures.joints[idTwo]
 
         const [x1, y1] = this.pointToPix(jointOne.pos)
         const [x2, y2] = this.pointToPix(jointTwo.pos)
+
+        if (textId in forces) {
+          const force = forces[textId]
+          const [avgX, avgY] = [(x1 + x2) / 2, (y1 + y2) / 2]
+          let direction = Math.atan2(y2 - y1, x2 - x1)
+          if (direction > Math.PI / 2 || direction < -1 * Math.PI / 2) {
+            direction += Math.PI
+          }
+          text.text = force
+          text.x = avgX
+          text.y = avgY
+          text.style.fontSize = this.jointRadius * 1.25
+          text.rotation = direction
+        } else {
+          text.text = ''
+        }
 
         if (this.selections.joints.indexOf(idOne) > -1 && this.selections.joints.indexOf(idTwo) > -1) {
           // Then both joints are selected and the member should be selected
@@ -1499,7 +1532,7 @@ export default {
       }
       return solutions
     },
-    getInternalForces () {
+    getInternalForces (display = false) {
       if (this.calculatedFailed) {
         return
       }
@@ -1522,11 +1555,15 @@ export default {
       }
       const forces = {}
       for (let i = 0; i < members.length; i++) {
-        forces[`${members[i][0]}-${members[i][1]}`] = this.toSlideRule(Math.round(solution[i] * 100000) / 100000)
+        const memberId = members[i].sort().join('-')
+        forces[memberId] = this.toSlideRule(Math.round(solution[i] * 100000) / 100000)
       }
       this.structures.internalForces = forces
-      this.showingResults = true
+      if (display) {
+        this.showingResults = true
+      }
       this.copied = false
+      this.redraw()
       return forces
     },
     onCalculateFailed (message) {
