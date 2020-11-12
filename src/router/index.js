@@ -8,18 +8,13 @@ const routes = [
   {
     path: '/',
     name: 'Home',
-    redirect: '/trusstwo',
+    redirect: '/truss',
     component: Home
   },
   {
     path: '/truss',
     name: 'Trusses',
     component: () => import('@/views/Trusses')
-  },
-  {
-    path: '/trusstwo',
-    name: 'Trusses2',
-    component: () => import('@/views/TrussesV2')
   }
 ]
 

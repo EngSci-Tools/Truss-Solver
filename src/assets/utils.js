@@ -29,8 +29,8 @@ export const unit = {
 }
 
 export const jointType = {
-  PIN: 'pin',
-  FLOATING: 'floating'
+  PIN: 'Pin',
+  FLOATING: 'Floating'
 }
 
 export class Joint {
