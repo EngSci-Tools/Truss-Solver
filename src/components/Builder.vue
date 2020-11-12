@@ -153,6 +153,7 @@ export default {
       handler (to) {
         // Visuals always need to rerender the whole scene since it always results in changes to all containers
         this.redraw()
+        this.toQueryString()
         this.pixi.app.stage.x = to.viewX + this.visuals.width / 2
         this.pixi.app.stage.y = to.viewY + this.visuals.height / 2
       },
@@ -395,6 +396,7 @@ export default {
         this.history.push(actions)
       }
       this.redraw()
+      this.toQueryString()
     },
 
     undo () {
@@ -1480,10 +1482,16 @@ export default {
       try {
         solutionVector = this.forceSolutionVector(joints)
       } catch (err) {
-        this.onCalculateFailed()
+        this.onCalculateFailed('Pin 2 Joints')
         return
       }
-      const solution = linear.solve(componentMatrix, solutionVector)
+      let solution
+      try {
+        solution = linear.solve(componentMatrix, solutionVector)
+      } catch (err) {
+        this.onCalculateFailed('Matrix Singular')
+        return
+      }
       const forces = {}
       for (let i = 0; i < members.length; i++) {
         forces[`${members[i][0]}-${members[i][1]}`] = this.toSlideRule(Math.round(solution[i] * 100000) / 100000)
@@ -1493,8 +1501,9 @@ export default {
       this.copied = false
       return forces
     },
-    onCalculateFailed () {
+    onCalculateFailed (message) {
       this.calculatedFailed = true
+      this.calculatedFailedMessage = message
       setTimeout(() => {
         this.calculatedFailed = false
       }, 2000)
@@ -1503,7 +1512,7 @@ export default {
     // Helpers for exporting and importing
     fromQueryString () {
       // testUrl: localhost:8080/trusstwo?joints=[["A",[-1,0],1],["B",[0,2]],["C",[1,0],1]]&members=[["A","B"],["B","C"]]&forces=[["B",175,-90]]
-      const { joints, members, forces } = this.$route.query
+      const { joints, members, forces, seperation } = this.$route.query
       const actionArr = []
       try {
         const jointArr = JSON.parse(joints)
@@ -1523,19 +1532,25 @@ export default {
           actionArr.push(new actions.forces.ADD(force[0], force[1], force[2]))
         }
       } catch (err) { }
+      try {
+        const seperationArr = JSON.parse(seperation)
+        this.visuals.xSep = seperationArr[0]
+        this.visuals.ySep = seperationArr[1]
+      } catch (err) { }
       this.execute(actionArr)
     },
     async toQueryString () {
-      const { joints, members, forces } = this.exportJSON()
+      const { joints, members, forces, seperation } = this.exportJSON()
       try {
-        await this.$router.replace({ name: 'Trusses', query: { joints: JSON.stringify(joints), members: JSON.stringify(members), forces: JSON.stringify(forces) } })
+        await this.$router.replace({ name: 'Trusses', query: { joints: JSON.stringify(joints), members: JSON.stringify(members), forces: JSON.stringify(forces), seperation: JSON.stringify(seperation) } })
       } catch (err) { }
     },
     exportJSON () {
       const joints = Object.entries(this.structures.joints).map(([id, joint]) => [id, joint.pos, joint.type === jointType.PIN ? 1 : undefined])
       const members = this.structures.members.getAllMembers()
       const forces = Object.entries(this.structures.loads).map(([id, force]) => [id, force.magnitude, force.direction])
-      return { joints, members, forces }
+      const seperation = [this.visuals.xSep, this.visuals.ySep]
+      return { joints, members, forces, seperation }
     }
   }
 }
