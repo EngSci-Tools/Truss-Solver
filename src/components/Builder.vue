@@ -85,7 +85,7 @@ import Vue from 'vue'
 import linear from 'linear-solve'
 import { mode, placeType, interactionType, unit, jointType, Joint, Force, MemberGraph, actions, actionTypes, actionErrors, sleep } from '@/assets/utils'
 import * as PIXI from 'pixi.js'
-const { Application, Container, Graphics } = PIXI
+const { Application, Container, Graphics, Text } = PIXI
 
 export default {
   name: 'Build',
@@ -110,7 +110,10 @@ export default {
       scaleMax: 100,
       scaleMin: 20,
       viewX: 0,
-      viewY: 0
+      viewY: 0,
+
+      jointText: {},
+      memberText: {}
     },
 
     interactions: { // I wish a lot of these could be computed properties... but they can't cause they're pixi things or just too complicated
@@ -118,6 +121,7 @@ export default {
       leftMouseDown: false,
       rightMouseDown: false,
       mousePos: [0, 0],
+      pointBeforeScale: [0, 0],
       dragging: false,
       dragStart: [], // Stores where a drag started so that we can draw selections correctly. Stored in point coordinate system
       heldKeys: [],
@@ -145,7 +149,11 @@ export default {
       bridge: new Container(),
       jointGraph: new Graphics(),
       memberGraph: new Graphics(),
-      loadsGraph: new Graphics()
+      loadsGraph: new Graphics(),
+
+      textContainer: new Container(),
+      jointText: {},
+      memberText: {}
     }
   }),
   watch: {
@@ -160,11 +168,19 @@ export default {
       deep: true
     },
     'visuals.scale' (to) {
+      const { pointBeforeScale: before } = this.interactions
+      const { mousePoint: after } = this
+
       if (to > this.visuals.scaleMax) {
         this.visuals.scale = this.visuals.scaleMax
       } else if (to < this.visuals.scaleMin) {
         this.visuals.scale = this.visuals.scaleMin
       }
+      const pointDeltaX = after[0] - before[0]
+      const pointDeltaY = after[1] - before[1]
+      const [pixX, pixY] = this.pointToPix([pointDeltaX, pointDeltaY])
+      this.visuals.viewX += pixX
+      this.visuals.viewY += pixY
     },
     structures: {
       handler () {
@@ -552,6 +568,10 @@ export default {
       if (id in this.structures.joints) {
         throw new actionErrors.Failed(action.constructor.name, 'Joint ID already exists')
       }
+      const text = new Text(id, { fontFamily: 'Arial', fontSize: this.jointRadius, fill: 0x2c3e50, align: 'center' })
+      text.anchor.set(0.5)
+      this.pixi.textContainer.addChild(text)
+      Vue.set(this.pixi.jointText, id, text)
       Vue.set(this.structures.joints, id, new Joint(point, type))
       this.structures.members.addJoint(id)
     },
@@ -567,7 +587,8 @@ export default {
       if (jointType !== type) {
         throw new actionErrors.Failed(action.constructor.name, `Joint type ${jointType} does not match remove type ${type}`)
       }
-      // TODO: Systematically remove all members from this joint so that it can be undone gracefully. Oh also deselect. And now that I think of it, this needs to be down before the action exeution starts
+      this.pixi.jointText[id].destroy()
+      Vue.delete(this.pixi.jointText, id)
       Vue.delete(this.structures.joints, id)
       const selectedIndex = this.selections.joints.indexOf(id)
       if (selectedIndex > -1) {
@@ -711,6 +732,7 @@ export default {
 
       this.pixi.app.view.addEventListener('wheel', e => {
         // TODO: Make this zoom at the center of the screen instead of [0, 0]
+        this.interactions.pointBeforeScale = this.pixToPoint(this.interactions.mousePos)
         this.visuals.scale -= e.deltaY / 2
         e.preventDefault()
         return false
@@ -1022,7 +1044,7 @@ export default {
 
     // Render Methods
     setupChildren () {
-      const { background, bridge, backgroundGraph, selectionGraph, jointGraph, memberGraph, loadsGraph, app } = this.pixi
+      const { background, bridge, textContainer, backgroundGraph, selectionGraph, jointGraph, memberGraph, loadsGraph, app } = this.pixi
       background.addChild(backgroundGraph)
       background.addChild(selectionGraph)
       app.stage.addChild(background)
@@ -1030,6 +1052,7 @@ export default {
       bridge.addChild(memberGraph)
       bridge.addChild(loadsGraph)
       bridge.addChild(jointGraph)
+      bridge.addChild(textContainer)
       app.stage.addChild(bridge)
     },
     fitPixiCanvas (div) {
@@ -1055,7 +1078,7 @@ export default {
     },
     drawJointGraph () {
       // Renders the joints based of off the structures.joints object
-      const { jointGraph } = this.pixi
+      const { jointGraph, jointText } = this.pixi
       jointGraph.clear()
 
       /* eslint-disable no-unused-vars */
@@ -1073,10 +1096,15 @@ export default {
           jointGraph.endFill()
         }
         if (type === jointType.PIN) {
-          jointGraph.beginFill(0x000000)
-          jointGraph.drawCircle(x, y, this.jointRadius / 2)
-          jointGraph.endFill()
+          jointGraph.lineStyle(this.jointRadius / 4, 0x8e44ad)
+          jointGraph.drawCircle(x, y, this.jointRadius)
+          jointGraph.lineStyle(0, 0x000000)
         }
+        const text = jointText[id]
+        text.x = x
+        text.y = y
+        text.style.fontSize = this.jointRadius * 1.5
+        // text.style.fill = joint.type === jointType.PIN ?
       }
       /* eslint-enable no-unused-vars */
     },
