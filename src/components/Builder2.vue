@@ -1,7 +1,7 @@
 <template>
   <div class='builder' ref='builder' oncontextmenu="return false;">
     <!-- TODO: Add a toolbar to go above the canvas -->
-    <b-modal id="modal-xl" size="xl" v-model='showingResults' title="Extra Large Modal">
+    <b-modal id="modal-xl" size="xl" v-model='showingResults' title="Internal Forces">
       <b-table-simple>
         <b-thead>
           <b-tr>
@@ -158,6 +158,12 @@ export default {
       } else if (to < this.visuals.scaleMin) {
         this.visuals.scale = this.visuals.scaleMin
       }
+    },
+    structures: {
+      handler () {
+        this.toQueryString()
+      },
+      deep: true
     }
   },
   computed: {
@@ -272,9 +278,10 @@ export default {
     // await this.testMemberActions()
     // await this.testSelectionActions()
     // await this.testParallelActions()
-    await this.testAdd()
+    // await this.testAdd()
 
     this.addInteractionListeners()
+    this.fromQueryString()
   },
   methods: {
     // There are three major method types, Action methods, Interaction methods, and Helper methods.
@@ -1464,6 +1471,39 @@ export default {
       return forces
     },
 
+    // Helpers for exporting and importing
+    fromQueryString () {
+      // testUrl: localhost:8080/trusstwo?joints=[["A",[-1,0],1],["B",[0,2]],["C",[1,0],1]]&members=[["A","B"],["B","C"]]&forces=[["B",175,-90]]
+      const { joints, members, forces } = this.$route.query
+      const actionArr = []
+      try {
+        const jointArr = JSON.parse(joints)
+        for (const [id, location, isPin] of jointArr) {
+          actionArr.push(new actions.joints.ADD(location, id, isPin ? jointType.PIN : jointType.FLOATING))
+        }
+      } catch (err) { }
+      try {
+        const memberArr = JSON.parse(members)
+        for (const member of memberArr) {
+          actionArr.push(new actions.members.ADD(member[0], member[1]))
+        }
+      } catch (err) { }
+      try {
+        const forcesArr = JSON.parse(forces)
+        for (const force of forcesArr) {
+          actionArr.push(new actions.forces.ADD(force[0], force[1], force[2]))
+        }
+      } catch (err) { }
+      this.execute(actionArr)
+    },
+    async toQueryString () {
+      const joints = Object.entries(this.structures.joints).map(([id, joint]) => [id, joint.pos, joint.type === jointType.PIN ? 1 : undefined])
+      const members = this.structures.members.getAllMembers()
+      const forces = Object.entries(this.structures.loads).map(([id, force]) => [id, force.magnitude, force.direction])
+      try {
+        await this.$router.replace({ name: 'Trusses2', query: { joints: JSON.stringify(joints), members: JSON.stringify(members), forces: JSON.stringify(forces) } })
+      } catch (err) { }
+    },
     exportJSON () {
     }
   }
