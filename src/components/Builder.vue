@@ -42,7 +42,7 @@
       <b-input-group class='mx-1 mt-1 tick-input' append="m" prepend='X Tick Seperation'>
           <b-form-input :value='visuals.xSep' @change='visuals.xSep = $event' class="text-right"></b-form-input>
         </b-input-group>
-      <b-button class='m-1 mt-1' @click='getInternalForces()' :variant='calculatedFailed ? "danger" : ""'>{{ calculatedFailed ? calculatedFailedMessage : 'Caculate' }}</b-button>
+      <b-button class='m-1 mt-1' @click='getInternalForces(true)' :variant='calculatedFailed ? "danger" : ""'>{{ calculatedFailed ? calculatedFailedMessage : 'Caculate' }}</b-button>
       <div v-if='jointSelected'>
         <h4 class='m-1 mt-3'>Joints:</h4>
         <b-dropdown class='mx-1' :text='selectedJointsType'>
@@ -83,6 +83,8 @@
 /* eslint-disable no-unused-vars */
 import Vue from 'vue'
 import linear from 'linear-solve'
+import { normal } from 'color-blend'
+import convert from 'color-convert'
 import { mode, placeType, interactionType, unit, jointType, Joint, Force, MemberGraph, actions, actionTypes, actionErrors, sleep } from '@/assets/utils'
 import * as PIXI from 'pixi.js'
 const { Application, Container, Graphics, Text } = PIXI
@@ -137,6 +139,26 @@ export default {
       members: new MemberGraph(),
       internalForces: {},
       loads: {} // Forces take the key of their joint and have a value of their force
+    },
+
+    renderParams: {
+      member: {
+        defaultColor: 0x1abc9c,
+        selectedColor: 0x2ecc71,
+        tensionColor: 0xc0392b,
+        compressionColor: 0xc0392b,
+        textColor: 0xe74c3c
+      },
+      joint: {
+        defaultColor: 0xf39c12,
+        selectedColor: 0x2ecc71,
+        pinColor: 0x8e44ad,
+        textColor: 0x2c3e50
+      },
+      force: {
+        defaultColor: 0x8e44ad,
+        selectedColor: 0x2ecc71
+      }
     },
 
     pixi: {
@@ -284,6 +306,18 @@ export default {
       const minForce = Math.min(...internalForces)
       const maxForce = Math.max(...internalForces)
       return [minForce, maxForce, Math.max(Math.abs(minForce), Math.abs(maxForce))]
+    },
+    memberBaseRgb () {
+      const baseColor = convert.hex.rgb(this.renderParams.member.defaultColor.toString(16))
+      return { r: baseColor[0], g: baseColor[1], b: baseColor[2] }
+    },
+    memberCompressionRgb () {
+      const mixColor = convert.hex.rgb(this.renderParams.member.compressionColor.toString(16))
+      return { r: mixColor[0], g: mixColor[1], b: mixColor[2] }
+    },
+    memberTensionRgb () {
+      const mixColor = convert.hex.rgb(this.renderParams.member.tensionColor.toString(16))
+      return { r: mixColor[0], g: mixColor[1], b: mixColor[2] }
     }
   },
   async mounted () {
@@ -569,7 +603,7 @@ export default {
       if (id in this.structures.joints) {
         throw new actionErrors.Failed(action.constructor.name, 'Joint ID already exists')
       }
-      const text = new Text(id, { fontFamily: 'Arial', fontSize: this.jointRadius, fill: 0x2c3e50, align: 'center' })
+      const text = new Text(id, { fontFamily: 'Arial', fontSize: this.jointRadius, fill: this.renderParams.joint.textColor, align: 'center' })
       text.anchor.set(0.5)
       this.pixi.textContainer.addChild(text)
       Vue.set(this.pixi.jointText, id, text)
@@ -632,7 +666,7 @@ export default {
       // And then create some text that we can view it's forces with
       const textId = [jointOne, jointTwo].sort().join('-')
       if (!(textId in this.pixi.memberText)) {
-        const text = new Text('', { fontFamily: 'Arial', fontSize: this.jointRadius, fill: 0xe74c3c, align: 'center' })
+        const text = new Text('', { fontFamily: 'Arial', fontSize: this.jointRadius, fill: this.renderParams.member.textColor, align: 'center' })
         text.anchor.set(0.5, 1.5)
         this.pixi.textContainer.addChild(text)
         Vue.set(this.pixi.memberText, textId, text)
@@ -1101,16 +1135,16 @@ export default {
         const [x, y] = this.pointToPix(joint.pos)
         const type = joint.type
         if (this.selections.joints.indexOf(id) > -1) {
-          jointGraph.beginFill(0x2ecc71)
+          jointGraph.beginFill(this.renderParams.joint.selectedColor)
           jointGraph.drawCircle(x, y, this.jointRadius)
           jointGraph.endFill()
         } else {
-          jointGraph.beginFill(0xf39c12)
+          jointGraph.beginFill(this.renderParams.joint.defaultColor)
           jointGraph.drawCircle(x, y, this.jointRadius)
           jointGraph.endFill()
         }
         if (type === jointType.PIN) {
-          jointGraph.lineStyle(this.jointRadius / 4, 0x8e44ad)
+          jointGraph.lineStyle(this.jointRadius / 4, this.renderParams.joint.pinColor)
           jointGraph.drawCircle(x, y, this.jointRadius)
           jointGraph.lineStyle(0, 0x000000)
         }
@@ -1138,7 +1172,10 @@ export default {
         const [x1, y1] = this.pointToPix(jointOne.pos)
         const [x2, y2] = this.pointToPix(jointTwo.pos)
 
-        if (textId in forces) {
+        const hasForce = textId in forces
+        const force = hasForce ? forces[textId] : 0
+        const [maxTension, maxCompression] = this.internalMinMax
+        if (hasForce) {
           const force = forces[textId]
           const [avgX, avgY] = [(x1 + x2) / 2, (y1 + y2) / 2]
           let direction = Math.atan2(y2 - y1, x2 - x1)
@@ -1156,9 +1193,31 @@ export default {
 
         if (this.selections.joints.indexOf(idOne) > -1 && this.selections.joints.indexOf(idTwo) > -1) {
           // Then both joints are selected and the member should be selected
-          memberGraph.lineStyle(this.jointRadius / 2, 0x2ecc71, 1)
+          memberGraph.lineStyle(this.jointRadius / 2, this.renderParams.member.selectedColor, 1)
         } else {
-          memberGraph.lineStyle(this.jointRadius / 2, 0x1abc9c, 1)
+          if (!hasForce || force === 0) {
+            memberGraph.lineStyle(this.jointRadius / 2, this.renderParams.member.defaultColor, 1)
+          } else {
+            if (force < 0) {
+              // Then we are compressive. TODO: Add a way to calculate the FOS for each instead of proportion of max
+              const propOfMax = -1 * force / maxCompression
+              // TODO: Make this computed to decrease inefficiency
+              const baseColorObj = { ...this.memberBaseRgb, a: 1 - propOfMax }
+              const mixColorObj = { ...this.memberCompressionRgb, a: propOfMax }
+              const mixedObj = normal(baseColorObj, mixColorObj)
+              const mixedRgb = [mixedObj.r, mixedObj.g, mixedObj.b]
+              const mixed = convert.rgb.hex(mixedRgb)
+              memberGraph.lineStyle(this.jointRadius / 2, parseInt(mixed, 16), 1)
+            } else {
+              const propOfMax = -1 * force / maxTension
+              const baseColorObj = { ...this.memberBaseRgb, a: 1 - propOfMax }
+              const mixColorObj = { ...this.memberTensionRgb, a: propOfMax }
+              const mixedObj = normal(baseColorObj, mixColorObj)
+              const mixedRgb = [mixedObj.r, mixedObj.g, mixedObj.b]
+              const mixed = convert.rgb.hex(mixedRgb)
+              memberGraph.lineStyle(this.jointRadius / 2, parseInt(mixed, 16), 1)
+            }
+          }
         }
         memberGraph.moveTo(x1, y1)
         memberGraph.lineTo(x2, y2)
@@ -1194,9 +1253,9 @@ export default {
 
       for (const [jointId, force] of Object.entries(loads)) {
         if (this.selections.joints.indexOf(jointId) > -1) {
-          loadsGraph.lineStyle(this.jointRadius / 4, 0x2ecc71, 1)
+          loadsGraph.lineStyle(this.jointRadius / 4, this.renderParams.force.selectedColor, 1)
         } else {
-          loadsGraph.lineStyle(this.jointRadius / 4, 0x8e44ad, 1)
+          loadsGraph.lineStyle(this.jointRadius / 4, this.renderParams.force.defaultColor, 1)
         }
         const joint = this.structures.joints[jointId]
 
@@ -1543,14 +1602,22 @@ export default {
       try {
         solutionVector = this.forceSolutionVector(joints)
       } catch (err) {
-        this.onCalculateFailed('Pin 2 Joints')
+        if (display) {
+          this.onCalculateFailed('Pin 2 Joints')
+        }
+        this.structures.internalForces = {}
+        this.redraw()
         return
       }
       let solution
       try {
         solution = linear.solve(componentMatrix, solutionVector)
       } catch (err) {
-        this.onCalculateFailed('Matrix Singular')
+        if (display) {
+          this.onCalculateFailed('Matrix Singular')
+        }
+        this.structures.internalForces = {}
+        this.redraw()
         return
       }
       const forces = {}

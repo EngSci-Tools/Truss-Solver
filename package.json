@@ -10,6 +10,8 @@
   "dependencies": {
     "bootstrap": "^4.5.3",
     "bootstrap-vue": "^2.19.0",
+    "color-blend": "^3.0.0",
+    "color-convert": "^2.0.1",
     "core-js": "^3.6.5",
     "linear-solve": "^1.2.1",
     "node-sass": "^5.0.0",
