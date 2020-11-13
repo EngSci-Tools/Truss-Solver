@@ -58,10 +58,10 @@ class QueryConstructor {
 export class WarrenTrussConstructor extends QueryConstructor {
   constructor ({ height, memberLength, bridgeLength, bridgeWidth, jointLoad, uniformLoad }) {
     super()
-    this.jointLoad = jointLoad || 0
+    this.jointLoad = parseFloat(jointLoad) || 0
     if (uniformLoad) {
       const tributaryArea = memberLength * bridgeWidth / 2
-      const load = uniformLoad * tributaryArea
+      const load = parseFloat(uniformLoad) * tributaryArea
       this.jointLoad += load
     }
     this.height = height

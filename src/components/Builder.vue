@@ -44,7 +44,7 @@
           <b-form-input :value='visuals.xSep' @change='visuals.xSep = $event' class="text-right"></b-form-input>
         </b-input-group>
       <!-- <b-button class='m-1 mt-1' @click='getInternalForces(true)' :variant='calculatedFailed ? "danger" : ""'>{{ calculatedFailed ? calculatedFailedMessage : 'Caculate' }}</b-button> -->
-      <div v-if='jointSelected'>
+      <div v-if='jointSelected' class='container'>
         <h4 class='m-1 mt-3'>Joints:</h4>
         <b-dropdown id='joint-type-combo' class='mx-1' :text='selectedJointsType'>
           <b-dropdown-item @click='setSelectedJointType(jointType.FLOATING)'>Floating</b-dropdown-item>
@@ -52,11 +52,11 @@
         </b-dropdown>
         <b-button id='joint-remove-button' class='m-1' @click='removeSelectedJoints'>Remove</b-button>
       </div>
-      <div v-if='memberSelected'>
+      <div v-if='memberSelected' class='container'>
         <h4 class='m-1 mt-3'>Members:</h4>
         <b-button id='member-remove-button' class='m-1' @click='removeSelectedMembers'>Remove</b-button>
       </div>
-      <div v-if='forceSelected'>
+      <div v-if='forceSelected' class='container'>
         <h4 class='m-1 mt-3'>Loads:</h4>
         <b-button-toolbar id='force-mag-input' key-nav class='m-1 input-toolbar'>
           <b-input-group append="kN">
@@ -78,7 +78,6 @@
       <b-popover @hidden='stepTutorial(1)' triggers='manual' title='Mode' ref='modePopover' target='mode-dropdown'>
         <p>The mode sets the current controls. Right Click drag is always pan, scroll is always zoom, and escape always deselects everything, but left click shifts in purpose.</p>
         <b-button @click='stepTutorial(1)'>Next</b-button>
-        <b-button class='ml-1'>Quit</b-button>
       </b-popover>
       <b-popover @hidden='stepTutorial(2)' triggers='manual' title='Modes' ref='modesPopover' target='mode-select'>
         <p><b>Select (Ctrl+S)</b>: In this mode, left click selects or deselects one joint and left drag selects a range of points. When points are selected, all properties can be changed for the whole group. Pressing r will remove selected joints.</p>
@@ -96,6 +95,7 @@
         <p><b>Floating</b>: Floating joints will transfer force through themselves onto other joints.</p>
         <p><b>Pinned</b>: Pinned joints will create a reaction force to oppose any net force on them.</p>
         <p>In order for the truss to be solvable, you <b>must have exactly two pinned joints</b> in the truss.</p>
+        <p>Shift clicking on a joint while Selecting or placing Joints will toggle the joint type.</p>
         <b-button @click='stepTutorial(4)'>Next</b-button>
       </b-popover>
       <b-popover @hidden='stepTutorial(5)' triggers='manual' title='Remove Joints' ref='jointRemovePopover' target='joint-remove-button'>
@@ -112,6 +112,7 @@
       </b-popover>
       <b-popover @hidden='stepTutorial(8)' triggers='manual' title='Set Load Direction' ref='forceDirPopover' target='force-dir-input'>
         <p>Sets the direction for all selected forces. This is measured in degrees from pointing to the right. The default is -90 for directly down.</p>
+        <p><b>IMPORTANT:</b> The solution will be incorrect for forces not directly up and down as the pinned points do not yet correctly find their x-direction reaction force.</p>
         <b-button @click='stepTutorial(8)'>Next</b-button>
       </b-popover>
       <b-popover @hidden='stepTutorial(9)' triggers='manual' title='Remove Loads' ref='forceRemovePopover' target='force-remove-button'>
@@ -152,8 +153,8 @@ export default {
       units: unit.METERS,
       ySep: 4.3301, // These define how many units are between each background tick
       xSep: 2.5,
-      scaleMax: 100,
-      scaleMin: 20,
+      scaleMax: 200,
+      scaleMin: 10,
       viewX: 0,
       viewY: 0,
 
@@ -488,7 +489,6 @@ export default {
       ]
       if (step > this.tutorialStep) {
         this.tutorialStep = step
-        console.log('Step', this.tutorialStep)
         steps[this.tutorialStep]()
       }
     },
@@ -1147,6 +1147,12 @@ export default {
           this.onMarchingSelect(closest, 1)
         }
       })
+      this.on({ modes: mode.SECONDARY, placetypes: [placeType.JOINT, placeType.SELECTING], interactions: interactionType.LEFTCLICK }, ({ mousePoint }) => {
+        const closest = this.getClosestJoint(mousePoint, Object.keys(this.structures.joints), 1)
+        if (closest) {
+          this.toggleJointType(closest)
+        }
+      })
     },
     addMemberListeners () {
       // When the user left clicks, we do a marching select of size 2. If 2 are selected afterwards, we palce a member between them
@@ -1623,6 +1629,11 @@ export default {
       }
       this.execute(currActions)
     },
+    toggleJointType (jointId) {
+      const joint = this.structures.joints[jointId]
+      const newType = joint.type === jointType.PIN ? jointType.FLOATING : jointType.PIN
+      this.execute(new actions.joints.SETTYPE(jointId, joint.type, newType))
+    },
     removeAll () {
       this.execute(new actions.select.SELECT(Object.keys(this.structures.joints)))
       this.removeSelectedJoints()
@@ -1881,7 +1892,7 @@ export default {
     pointer-events: none;
     text-align: left;
 
-    * {
+    *:not(.container) {
       pointer-events: auto;
     }
 

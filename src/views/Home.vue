@@ -24,6 +24,7 @@
           <b-form-input v-model='warren.uniformLoad' type='number' ></b-form-input>
         </b-input-group>
         <b-button type='submit'>Warren Truss</b-button>
+        <p>There is a tutorial on the builder page if you click the button in the top left.</p>
       </b-form>
     </div>
   </div>
