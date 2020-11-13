@@ -9,3 +9,13 @@ Basic Controls:
    1. Joint: Left click selects a nearby joint. If there is none, it creates a joint on the nearest grid point. 
    1. Member: Left click selects a nearby joint. Once two are selected, a member is created between them. Selecting another joint will chain the member to that one.
    1. Force: Left click selects a nearby joint. It also places a force of 1kN in the down direction to the joint.
+
+Todo:
+- [ ] Allow users to move joints.
+- [ ] Compute horizontal reaction forces.
+- [ ] Add more truss types.
+- [ ] Make the home page look better.
+- [ ] Create a "Show my work" view.
+- [ ] Add a deflection solver.
+
+If you want to solve one of these, shoot me a message on the discord and I will point you to the relative components in the code.
