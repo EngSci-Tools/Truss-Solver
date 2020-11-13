@@ -25,16 +25,17 @@
     </b-modal>
     <div class='toolbar'>
       <b-button-toolbar key-nav aria-label="Toolbar with button groups">
-        <b-button-group class="mx-1">
-          <b-button @click='undo'>Undo</b-button>
+        <b-button-group id='undo-redo-buttons' class="mx-1">
+          <b-button @click='undo' :disabled='history.length < 1'>Undo</b-button>
           <b-button @click='redo' :disabled='undoneActions.length < 1'>Redo</b-button>
         </b-button-group>
-        <b-dropdown class="mx-1" right :text='`Mode: ${interactions.placeType}`'>
-          <b-dropdown-item @click='setMode(placeType.SELECTING)'>Select</b-dropdown-item>
-          <b-dropdown-item @click='setMode(placeType.JOINT)'>Joints</b-dropdown-item>
-          <b-dropdown-item @click='setMode(placeType.MEMBER)'>Members</b-dropdown-item>
-          <b-dropdown-item @click='setMode(placeType.FORCE)'>Loads</b-dropdown-item>
+        <b-dropdown ref='modeDropdown' id='mode-dropdown' class="mx-1" right :text='`Mode: ${interactions.placeType}`'>
+          <b-dropdown-item id='mode-select' @click='setMode(placeType.SELECTING)'>Select</b-dropdown-item>
+          <b-dropdown-item id='mode-joints' @click='setMode(placeType.JOINT)'>Joints</b-dropdown-item>
+          <b-dropdown-item id='mode-members' @click='setMode(placeType.MEMBER)'>Members</b-dropdown-item>
+          <b-dropdown-item  id='mode-loads' @click='setMode(placeType.FORCE)'>Loads</b-dropdown-item>
         </b-dropdown>
+        <b-button @click='startTutorial()'>Tutorial</b-button>
       </b-button-toolbar>
       <b-input-group class='mx-1 mt-1 tick-input' append="m" prepend='Y Tick Seperation'>
           <b-form-input :value='visuals.ySep' @change='visuals.ySep = $event' class="text-right"></b-form-input>
@@ -42,39 +43,81 @@
       <b-input-group class='mx-1 mt-1 tick-input' append="m" prepend='X Tick Seperation'>
           <b-form-input :value='visuals.xSep' @change='visuals.xSep = $event' class="text-right"></b-form-input>
         </b-input-group>
-      <b-button class='m-1 mt-1' @click='getInternalForces(true)' :variant='calculatedFailed ? "danger" : ""'>{{ calculatedFailed ? calculatedFailedMessage : 'Caculate' }}</b-button>
+      <!-- <b-button class='m-1 mt-1' @click='getInternalForces(true)' :variant='calculatedFailed ? "danger" : ""'>{{ calculatedFailed ? calculatedFailedMessage : 'Caculate' }}</b-button> -->
       <div v-if='jointSelected'>
         <h4 class='m-1 mt-3'>Joints:</h4>
-        <b-dropdown class='mx-1' :text='selectedJointsType'>
+        <b-dropdown id='joint-type-combo' class='mx-1' :text='selectedJointsType'>
           <b-dropdown-item @click='setSelectedJointType(jointType.FLOATING)'>Floating</b-dropdown-item>
           <b-dropdown-item @click='setSelectedJointType(jointType.PIN)'>Pin</b-dropdown-item>
         </b-dropdown>
-        <b-button class='m-1' @click='removeSelectedJoints'>Remove</b-button>
+        <b-button id='joint-remove-button' class='m-1' @click='removeSelectedJoints'>Remove</b-button>
       </div>
       <div v-if='memberSelected'>
         <h4 class='m-1 mt-3'>Members:</h4>
-        <b-button class='m-1' @click='removeSelectedMembers'>Remove</b-button>
+        <b-button id='member-remove-button' class='m-1' @click='removeSelectedMembers'>Remove</b-button>
       </div>
       <div v-if='forceSelected'>
         <h4 class='m-1 mt-3'>Loads:</h4>
-        <b-button-toolbar key-nav class='m-1 input-toolbar'>
+        <b-button-toolbar id='force-mag-input' key-nav class='m-1 input-toolbar'>
           <b-input-group append="kN">
-            <b-form-input :value='selectedForcesMagnitude' @change='setSelectedForceMagnitude($event)' class="text-right"></b-form-input>
+            <b-form-input type='number' min='0.001' :value='selectedForcesMagnitude' @input='setSelectedForceMagnitude($event)'></b-form-input>
           </b-input-group>
-          <b-button-group>
-            <b-button @click='setSelectedForceMagnitude()'>Apply</b-button>
-          </b-button-group>
         </b-button-toolbar>
-        <b-button-toolbar key-nav class='m-1 input-toolbar'>
-          <b-input-group append="o">
-            <b-form-input :value='selectedForcesDirection' @change='setSelectedForceDirection($event)' class="text-right"></b-form-input>
+        <b-button-toolbar id='force-dir-input' key-nav class='m-1 input-toolbar'>
+          <b-input-group>
+            <template #append>
+              <b-input-group-text><strong>&#176;</strong></b-input-group-text>
+            </template>
+            <b-form-input type='number' :value='selectedForcesDirection' @input='setSelectedForceDirection($event)'></b-form-input>
           </b-input-group>
-          <b-button-group>
-            <b-button @click='setSelectedForceDirection()'>Apply</b-button>
-          </b-button-group>
         </b-button-toolbar>
-        <b-button class='m-1' @click='removeSelectedForces'>Remove</b-button>
+        <b-button id='force-remove-button' class='m-1' @click='removeSelectedForces'>Remove</b-button>
       </div>
+    </div>
+    <div id='tutorial-container'>
+      <b-popover @hidden='stepTutorial(1)' triggers='manual' title='Mode' ref='modePopover' target='mode-dropdown'>
+        <p>The mode sets the current controls. Right Click drag is always pan, scroll is always zoom, and escape always deselects everything, but left click shifts in purpose.</p>
+        <b-button @click='stepTutorial(1)'>Next</b-button>
+        <b-button class='ml-1'>Quit</b-button>
+      </b-popover>
+      <b-popover @hidden='stepTutorial(2)' triggers='manual' title='Modes' ref='modesPopover' target='mode-select'>
+        <p><b>Select (Ctrl+S)</b>: In this mode, left click selects or deselects one joint and left drag selects a range of points. When points are selected, all properties can be changed for the whole group. Pressing r will remove selected joints.</p>
+        <p><b>Joints (Ctrl+J)</b>: In this mode, left click places a joint if one is not nearby, else it selects or deselects one joint. Only joint properties can be edited in this mode. Pressing r will remove the currently selected joint</p>
+        <p><b>Members (Ctrl+M)</b>: In this mode, left click selects a joint. A max of two joints can be selected at a time in this mode. Selecting two joints will create a member across them. Selecting another joint will chain the member to the next joint. Pressing r will remove a selected member.</p>
+        <p><b>Loads (Ctrl+L)</b>: In this mode, left click will select a single joint. Selecting a joint will apply a load to that point. The load magnitude and direction can be edited on the left. Pressing r will remove the load from the joint.</p>
+        <b-button @click='stepTutorial(2)'>Next</b-button>
+      </b-popover>
+      <b-popover @hidden='stepTutorial(3)' triggers='manual' title='Undo and Redo' ref='undoRedoPopover' target='undo-redo-buttons'>
+        <p>Any action can be undone by using this button or Ctrl+z. Ctrl+lShift+z will redo undone actions.</p>
+        <b-button @click='stepTutorial(3)'>Next</b-button>
+      </b-popover>
+      <b-popover @hidden='stepTutorial(4)' triggers='manual' title='Joint Type' ref='jointTypePopover' target='joint-type-combo'>
+        <p>The joint type decides how the truss will be solved. If multiple joints are selected, they will all be assigned the chosen type.</p>
+        <p><b>Floating</b>: Floating joints will transfer force through themselves onto other joints.</p>
+        <p><b>Pinned</b>: Pinned joints will create a reaction force to oppose any net force on them.</p>
+        <p>In order for the truss to be solvable, you <b>must have exactly two pinned joints</b> in the truss.</p>
+        <b-button @click='stepTutorial(4)'>Next</b-button>
+      </b-popover>
+      <b-popover @hidden='stepTutorial(5)' triggers='manual' title='Remove Joints' ref='jointRemovePopover' target='joint-remove-button'>
+        <p>Clicking this button will remove any selected joints.</p>
+        <b-button @click='stepTutorial(5)'>Next</b-button>
+      </b-popover>
+      <b-popover @hidden='stepTutorial(6)' triggers='manual' title='Remove Members' ref='memberRemovePopover' target='member-remove-button'>
+        <p>Clicking this button will remove any selected members. Joints and loads are unaffected by this.</p>
+        <b-button @click='stepTutorial(6)'>Next</b-button>
+      </b-popover>
+      <b-popover @hidden='stepTutorial(7)' triggers='manual' title='Set Load Force' ref='forceMagPopover' target='force-mag-input'>
+        <p>Sets the magnitude for any selected loads. If not all selected loads are the same magnitude, the textbox will be autofilled with 0. Editing this will edit all selected loads no matter what.</p>
+        <b-button @click='stepTutorial(7)'>Next</b-button>
+      </b-popover>
+      <b-popover @hidden='stepTutorial(8)' triggers='manual' title='Set Load Direction' ref='forceDirPopover' target='force-dir-input'>
+        <p>Sets the direction for all selected forces. This is measured in degrees from pointing to the right. The default is -90 for directly down.</p>
+        <b-button @click='stepTutorial(8)'>Next</b-button>
+      </b-popover>
+      <b-popover @hidden='stepTutorial(9)' triggers='manual' title='Remove Loads' ref='forceRemovePopover' target='force-remove-button'>
+        <p>Clicking this button will remove any selected loads. Joints and members are unaffected by this.</p>
+        <b-button @click='stepTutorial(9)'>Next</b-button>
+      </b-popover>
     </div>
   </div>
 </template>
@@ -147,7 +190,7 @@ export default {
         selectedColor: 0x2ecc71,
         tensionColor: 0xc0392b,
         compressionColor: 0xc0392b,
-        textColor: 0xe74c3c
+        textColor: 0xbdc3c7
       },
       joint: {
         defaultColor: 0xf39c12,
@@ -176,6 +219,27 @@ export default {
       textContainer: new Container(),
       jointText: {},
       memberText: {}
+    },
+
+    tutorialActive: false,
+    tutorialStep: -1,
+    tutorial: {
+      modePop: false,
+      modeSelectPop: false,
+      modeJointsPop: false,
+      modeMembersPop: false,
+      modeLoadsPop: false,
+      undoRedoPop: false,
+      sepTick: false,
+
+      jointTypePop: false,
+      jointRemovePop: false,
+
+      memberRemovePop: false,
+
+      loadsMagPop: false,
+      loadsDirPop: false,
+      loadsRemovePop: false
     }
   }),
   watch: {
@@ -340,6 +404,95 @@ export default {
     this.fromQueryString()
   },
   methods: {
+    async startTutorial () {
+      this.tutorialStep = -1
+      this.tutorialActive = true
+      this.removeAll()
+
+      await sleep(200)
+      this.stepTutorial(0)
+    },
+    stepTutorial (step) {
+      const {
+        modeDropdown, modePopover, modesPopover, undoRedoPopover,
+        jointTypePopover, jointRemovePopover, memberRemovePopover, forceMagPopover,
+        forceDirPopover, forceRemovePopover
+      } = this.$refs
+      const steps = [
+        () => {
+          modePopover.doOpen()
+        },
+        async () => {
+          modeDropdown.show()
+          await sleep(300)
+          modesPopover.doOpen()
+        },
+        async () => {
+          modeDropdown.hide()
+          undoRedoPopover.doOpen()
+        },
+        async () => {
+          this.removeAll()
+          undoRedoPopover.doClose()
+          this.execute([
+            new actions.joints.ADD([0, 0], 'A', jointType.FLOATING),
+            new actions.select.SELECT(['A'])
+          ], false)
+          await sleep(300)
+          jointTypePopover.doOpen()
+          await sleep(1500)
+          this.execute(new actions.joints.SETTYPE('A', jointType.FLOATING, jointType.PIN), false)
+        },
+        async () => {
+          this.removeAll()
+          jointTypePopover.doClose()
+          this.execute([
+            new actions.joints.ADD([0, 0], 'A', jointType.FLOATING),
+            new actions.select.SELECT(['A'])
+          ])
+          await sleep(300)
+          jointRemovePopover.doOpen()
+        },
+        async () => {
+          this.removeAll()
+          jointRemovePopover.doClose()
+          this.execute([
+            new actions.joints.ADD([0, 0], 'A', jointType.FLOATING),
+            new actions.joints.ADD([2, 2], 'B', jointTypePopover.FLOATING),
+            new actions.members.ADD('A', 'B'),
+            new actions.select.SELECT(['A', 'B'])
+          ])
+          await sleep(300)
+          memberRemovePopover.doOpen()
+        },
+        async () => {
+          this.removeAll()
+          memberRemovePopover.doClose()
+          this.exampleBridge()
+          await sleep(300)
+          forceMagPopover.doOpen()
+        },
+        async () => {
+          forceMagPopover.doClose()
+          forceDirPopover.doOpen()
+        },
+        async () => {
+          forceDirPopover.doClose()
+          forceRemovePopover.doOpen()
+        },
+        async () => {
+          forceRemovePopover.doClose()
+          this.tutorialActive = false
+          this.tutorialStep = -1
+        }
+      ]
+      if (step > this.tutorialStep) {
+        this.tutorialStep = step
+        console.log('Step', this.tutorialStep)
+        steps[this.tutorialStep]()
+      }
+    },
+
     copyPath () {
       const hiddenUrl = this.$refs.hiddenUrl
       const origin = window.location.origin
@@ -594,6 +747,25 @@ export default {
         new actions.forces.ADD('K', 175, -90)
       ]
       this.execute(actionsList)
+    },
+    async exampleBridge () {
+      const actionList = [
+        new actions.joints.ADD([-5, 0], 'A', jointType.PIN),
+        new actions.joints.ADD([-2.5, 4.3301], 'B', jointType.FLOATING),
+        new actions.joints.ADD([0, 0], 'C', jointType.FLOATING),
+        new actions.joints.ADD([2.5, 4.3301], 'D', jointType.FLOATING),
+        new actions.joints.ADD([5, 0], 'E', jointType.PIN),
+        new actions.members.ADD('A', 'B'),
+        new actions.members.ADD('A', 'C'),
+        new actions.members.ADD('B', 'C'),
+        new actions.members.ADD('B', 'D'),
+        new actions.members.ADD('C', 'D'),
+        new actions.members.ADD('C', 'E'),
+        new actions.members.ADD('D', 'E'),
+        new actions.forces.ADD('C', 175, -90),
+        new actions.select.SELECT(['C'])
+      ]
+      this.execute(actionList, false)
     },
 
     // Joint Action Handlers
@@ -1182,7 +1354,7 @@ export default {
           if (direction > Math.PI / 2 || direction < -1 * Math.PI / 2) {
             direction += Math.PI
           }
-          text.text = force
+          text.text = `${force} kN`
           text.x = avgX
           text.y = avgY
           text.style.fontSize = this.jointRadius * 1.25
@@ -1451,6 +1623,11 @@ export default {
       }
       this.execute(currActions)
     },
+    removeAll () {
+      this.execute(new actions.select.SELECT(Object.keys(this.structures.joints)))
+      this.removeSelectedJoints()
+      this.history = []
+    },
 
     addMember (jointOne, jointTwo) {
       this.execute(new actions.members.ADD(jointOne, jointTwo))
@@ -1485,10 +1662,10 @@ export default {
       this.execute(currActions)
     },
     setSelectedForceMagnitude (magnitude) {
-      if (isNaN(magnitude)) {
+      magnitude = parseFloat(magnitude)
+      if (magnitude === 0 || isNaN(magnitude)) {
         return false
       }
-      magnitude = parseFloat(magnitude)
       const currActions = []
       for (const [jointId, force] of Object.entries(this.selectedForces)) {
         currActions.push(new actions.forces.SETMAG(jointId, force.magnitude, magnitude))
@@ -1496,10 +1673,10 @@ export default {
       this.execute(currActions)
     },
     setSelectedForceDirection (direction) {
+      direction = parseFloat(direction)
       if (isNaN(direction)) {
         return false
       }
-      direction = parseFloat(direction)
       const currActions = []
       for (const [jointId, force] of Object.entries(this.selectedForces)) {
         currActions.push(new actions.forces.SETDIR(jointId, force.direction, direction))
@@ -1669,7 +1846,7 @@ export default {
         this.visuals.xSep = seperationArr[0]
         this.visuals.ySep = seperationArr[1]
       } catch (err) { }
-      this.execute(actionArr)
+      this.execute(actionArr, false)
     },
     async toQueryString () {
       const { joints, members, forces, seperation } = this.exportJSON()
@@ -1709,7 +1886,7 @@ export default {
     }
 
     .input-toolbar {
-      max-width: 12em;
+      max-width: 9em;
       flex-wrap: nowrap;
     }
 
