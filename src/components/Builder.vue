@@ -47,12 +47,17 @@
       <!-- <b-button class='m-1 mt-1' @click='getInternalForces(true)' :variant='calculatedFailed ? "danger" : ""'>{{ calculatedFailed ? calculatedFailedMessage : 'Caculate' }}</b-button> -->
       <div v-if='jointSelected' class='container'>
         <h4 class='m-1 mt-3'>Joints:</h4>
-        <b-dropdown id='joint-type-combo' class='mx-1' :text='selectedJointsType'>
+        <b-dropdown id='joint-type-combo' class='ml-1' :text='selectedJointsType'>
           <b-dropdown-item @click='setSelectedJointType(jointType.FLOATING)'>Floating</b-dropdown-item>
           <b-dropdown-item @click='setSelectedJointType(jointType.PIN)'>Pin</b-dropdown-item>
           <b-dropdown-item @click='setSelectedJointType(jointType.ROLLER)'>Roller</b-dropdown-item>
         </b-dropdown>
+        <b-button class='ml-1' @click='snapSelectionToNearest()'>Snap to Grid</b-button>
         <b-button id='joint-remove-button' class='m-1' @click='removeSelectedJoints'>Remove</b-button>
+        <b-input-group class='ml-1 mt-1 tick-input' v-if='selections.joints.length === 1' prepend='(x, y)'>
+          <b-input type='number' step='0.1' @input='moveSelectedTo([$event, selectedJoint.pos[1]])' :value='selectedJoint.pos[0]'></b-input>
+          <b-input type='number' step='0.1' @input='moveSelectedTo([selectedJoint.pos[0], $event])' :value='selectedJoint.pos[1]'></b-input>
+        </b-input-group>
       </div>
       <div v-if='memberSelected' class='container'>
         <h4 class='m-1 mt-3'>Members:</h4>
@@ -388,6 +393,9 @@ export default {
         }
       }
       return currDir
+    },
+    selectedJoint () {
+      return this.structures.joints[this.selections.joints[0]]
     },
     internalMinMax () {
       const internalForces = Object.values(this.structures.internalForces)
@@ -1869,6 +1877,33 @@ export default {
         }
         this.execute(actionsList)
       }
+    },
+    moveSelectedTo ([x, y]) {
+      try {
+        x = parseFloat(x)
+        y = parseFloat(y)
+        if (isNaN(x) || isNaN(y)) {
+          throw new Error('Positions must be numbers')
+        }
+      } catch (err) {
+        return false
+      }
+      const actionsList = []
+      for (const jointId of this.selections.joints) {
+        const joint = this.structures.joints[jointId]
+        const delta = [x - joint.pos[0], y - joint.pos[1]]
+        actionsList.push(new actions.joints.MOVE(delta, jointId))
+      }
+      this.execute(actionsList)
+    },
+    snapSelectionToNearest () {
+      const actionsList = []
+      for (const [jointId, joint] of Object.entries(this.structures.joints)) {
+        const nearest = this.pointToNearest(joint.pos)
+        const delta = [nearest[0] - joint.pos[0], nearest[1] - joint.pos[1]]
+        actionsList.push(new actions.joints.MOVE(delta, jointId))
+      }
+      this.execute(actionsList)
     },
 
     addMember (jointOne, jointTwo) {
