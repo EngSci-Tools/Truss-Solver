@@ -62,6 +62,16 @@ export class Force {
   }
 }
 
+export function toSlideRule (num) {
+  if (num === 0) {
+    return 0
+  }
+  const shifted = num * 10 ** (Math.ceil(Math.log10(1 / num)))
+  const prec = Math.floor(shifted) === 1 ? 4 : 3
+  num = Math.round(num * 10 ** 6) / 10 ** 6
+  return parseFloat(num.toPrecision(prec))
+}
+
 // Lets play the game of how many times I misspell adjacent
 export class MemberGraph {
   // This is the most confusing portion of the app. Members are represented as an undirected graph stored as a adjacency list.

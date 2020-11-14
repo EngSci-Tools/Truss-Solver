@@ -133,12 +133,13 @@ import Vue from 'vue'
 import linear from 'linear-solve'
 import { normal } from 'color-blend'
 import convert from 'color-convert'
-import { mode, placeType, interactionType, unit, jointType, Joint, Force, MemberGraph, actions, actionTypes, actionErrors, sleep } from '@/assets/utils'
+import { toSlideRule, mode, placeType, interactionType, unit, jointType, Joint, Force, MemberGraph, actions, actionTypes, actionErrors, sleep } from '@/assets/utils'
 import * as PIXI from 'pixi.js'
 const { Application, Container, Graphics, Text } = PIXI
 
 export default {
   name: 'Build',
+  props: ['componentMatrix', 'jointVector', 'memberVector', 'answerVector', 'solutionVector'],
   data: () => ({
     placeType,
     jointType,
@@ -980,6 +981,10 @@ export default {
 
       this.pixi.app.view.addEventListener('wheel', e => {
         // TODO: Make this zoom at the center of the screen instead of [0, 0]
+        if (this.holdingKey('MetaLeft')) {
+          // Let us scroll if we are holding the command button
+          return true
+        }
         this.interactions.pointBeforeScale = this.pixToPoint(this.interactions.mousePos)
         let finalScale = this.visuals.scale - e.deltaY / 2
         finalScale = Math.min(this.visuals.scaleMax, finalScale)
@@ -2048,14 +2053,6 @@ export default {
       // this.ghostPlace(true)
     },
 
-    toSlideRule (num) {
-      if (num === 0) {
-        return 0
-      }
-      const shifted = num * 10 ** (Math.ceil(Math.log10(1 / num)))
-      const prec = Math.floor(shifted) === 1 ? 4 : 3
-      return parseFloat(num.toPrecision(prec))
-    },
     forceComponentMatrix (unknowns, joints) {
       // Gets the matrix of force components cooresponding to the linear equations for x and y static structure
       const matrixSize = [2 * joints.length, unknowns.length]
@@ -2152,7 +2149,7 @@ export default {
       }
       let solution
       try {
-        solution = linear.solve(componentMatrix, solutionVector)
+        solution = linear.solve(componentMatrix, [...solutionVector]) // I recreate solutionVector because this function mutates it.
       } catch (err) {
         if (display) {
           this.onCalculateFailed('Matrix Singular')
@@ -2164,13 +2161,30 @@ export default {
       const forces = {}
       for (let i = 0; i < members.length; i++) {
         const memberId = members[i].sort().join('-')
-        forces[memberId] = this.toSlideRule(Math.round(solution[i] * 100000) / 100000)
+        forces[memberId] = toSlideRule(Math.round(solution[i] * 100000) / 100000)
       }
       this.structures.internalForces = forces
       if (display) {
         this.showingResults = true
       }
       this.copied = false
+
+      if (this.componentMatrix) {
+        this.componentMatrix.splice(0, this.componentMatrix.length, ...componentMatrix)
+      }
+      if (this.jointVector) {
+        this.jointVector.splice(0, this.jointVector.length, ...joints)
+      }
+      if (this.memberVector) {
+        this.memberVector.splice(0, this.memberVector.length, ...members)
+      }
+      if (this.answerVector) {
+        this.answerVector.splice(0, this.answerVector.length, ...solutionVector)
+      }
+      if (this.solutionVector) {
+        this.solutionVector.splice(0, this.solutionVector.length, ...solution)
+      }
+
       this.redraw()
       return forces
     },
