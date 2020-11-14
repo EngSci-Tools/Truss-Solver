@@ -2,20 +2,13 @@
   <div id='truss'>
     <div id='builder-container'>
       <Builder
-        :componentMatrix='trussAnalysis.componentMatrix'
-        :jointVector='trussAnalysis.jointVector'
-        :memberVector='trussAnalysis.memberVector'
-        :answerVector='trussAnalysis.answerVector'
-        :solutionVector='trussAnalysis.solutionVector'
+        :solution='trussAnalysis'
       ></Builder>
     </div>
-    <div id='truss-analysis'>
+    <div id='truss-analysis' ref='trussAnalysis'>
+      <HSS :solution='trussAnalysis'></HSS>
       <ComponentTable
-        :componentMatrix='trussAnalysis.componentMatrix'
-        :jointVector='trussAnalysis.jointVector'
-        :memberVector='trussAnalysis.memberVector'
-        :answerVector='trussAnalysis.answerVector'
-        :solutionVector='trussAnalysis.solutionVector'
+        :solution='trussAnalysis'
       ></ComponentTable>
     </div>
   </div>
@@ -24,30 +17,29 @@
 <script>
 import Builder from '@/components/Builder.vue'
 import ComponentTable from '@/components/ComponentTable.vue'
+import HSS from '@/components/hss.vue'
 
 export default {
   name: 'Truss',
   components: {
     Builder,
-    ComponentTable
+    ComponentTable,
+    HSS
+  },
+  mounted () {
+    this.$root.$on('viewData', () => {
+      this.$refs.trussAnalysis.scrollIntoView({ behavior: 'smooth' })
+    })
   },
   data: () => ({
     trussAnalysis: {
       componentMatrix: [],
       jointVector: [],
       memberVector: [],
-      answerVector: [],
+      forceVector: [],
       solutionVector: []
     }
-  }),
-  watch: {
-    trussAnalysis: {
-      handler (to) {
-        console.log('New Analysis: ', this.trussAnalysis)
-      },
-      deep: true
-    }
-  }
+  })
 }
 </script>
 

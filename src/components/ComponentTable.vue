@@ -17,7 +17,7 @@
           v-for='(component, equationIndex) in equation'
           :key='equationIndex'
         >{{ toSlideRule(component) }}</b-td>
-        <b-td class='answer-cell'>{{ toSlideRule(answerVector[jointIndex]) }}</b-td>
+        <b-td class='answer-cell'>{{ toSlideRule(forceVector[jointIndex]) }}</b-td>
       </b-tr>
     </b-tbody>
   </b-table-simple>
@@ -28,11 +28,16 @@ import { toSlideRule } from '@/assets/utils.js'
 
 export default {
   name: 'ComponentTable',
-  props: ['componentMatrix', 'jointVector', 'memberVector', 'answerVector', 'solutionVector'],
+  props: ['solution'],
   data: () => ({
     hovered: [-1, -1]
   }),
   computed: {
+    componentMatrix () { return this.solution.componentMatrix },
+    jointVector () { return this.solution.jointVector },
+    memberVector () { return this.solution.memberVector },
+    forceVector () { return this.solution.forceVector },
+    solutionVector () { return this.solution.solutionVector },
     matrixDims () {
       // Returned in heightxwidth like a usual matrix
       // The vertical includes all the linear equations. The header has the member names.

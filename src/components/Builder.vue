@@ -36,6 +36,7 @@
           <b-dropdown-item  id='mode-loads' @click='setMode(placeType.FORCE)'>Loads</b-dropdown-item>
         </b-dropdown>
         <b-button @click='startTutorial()'>Tutorial</b-button>
+        <b-button class='mx-1' @click='viewAnalysis()'>Show Analysis</b-button>
       </b-button-toolbar>
       <b-input-group class='mx-1 mt-1 tick-input' append="m" prepend='Y Tick Seperation'>
           <b-form-input :value='visuals.ySep' @change='visuals.ySep = $event' class="text-right"></b-form-input>
@@ -139,7 +140,7 @@ const { Application, Container, Graphics, Text } = PIXI
 
 export default {
   name: 'Build',
-  props: ['componentMatrix', 'jointVector', 'memberVector', 'answerVector', 'solutionVector'],
+  props: ['solution'],
   data: () => ({
     placeType,
     jointType,
@@ -518,6 +519,10 @@ export default {
         this.tutorialStep = step
         steps[this.tutorialStep]()
       }
+    },
+
+    viewAnalysis () {
+      this.$root.$emit('viewData')
     },
 
     copyPath () {
@@ -2169,20 +2174,20 @@ export default {
       }
       this.copied = false
 
-      if (this.componentMatrix) {
-        this.componentMatrix.splice(0, this.componentMatrix.length, ...componentMatrix)
-      }
-      if (this.jointVector) {
-        this.jointVector.splice(0, this.jointVector.length, ...joints)
-      }
-      if (this.memberVector) {
-        this.memberVector.splice(0, this.memberVector.length, ...members)
-      }
-      if (this.answerVector) {
-        this.answerVector.splice(0, this.answerVector.length, ...solutionVector)
-      }
-      if (this.solutionVector) {
-        this.solutionVector.splice(0, this.solutionVector.length, ...solution)
+      const memberLengths = members.map(([idOne, idTwo]) => {
+        const jointOne = this.structures.joints[idOne]
+        const jointTwo = this.structures.joints[idTwo]
+        const delta = [jointOne.pos[0] - jointTwo.pos[0], jointOne.pos[1] - jointTwo.pos[1]]
+        return Math.sqrt(delta[0] ** 2 + delta[1] ** 2)
+      })
+
+      if (this.solution) {
+        this.solution.componentMatrix = componentMatrix
+        this.solution.jointVector = joints
+        this.solution.memberVector = members
+        this.solution.forceVector = solutionVector
+        this.solution.solutionVector = solution
+        this.solution.memberLengths = memberLengths
       }
 
       this.redraw()
@@ -2191,6 +2196,14 @@ export default {
     onCalculateFailed (message) {
       this.calculatedFailed = true
       this.calculatedFailedMessage = message
+      if (this.solution) {
+        this.solution.componentMatrix = []
+        this.solution.jointVector = []
+        this.solution.memberVector = []
+        this.solution.forceVector = []
+        this.solution.solutionVector = []
+        this.solution.memberLengths = []
+      }
       setTimeout(() => {
         this.calculatedFailed = false
       }, 2000)
