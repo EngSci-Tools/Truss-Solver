@@ -46,13 +46,6 @@
       <!-- <b-button class='m-1 mt-1' @click='getInternalForces(true)' :variant='calculatedFailed ? "danger" : ""'>{{ calculatedFailed ? calculatedFailedMessage : 'Caculate' }}</b-button> -->
       <div v-if='jointSelected' class='container'>
         <h4 class='m-1 mt-3'>Joints:</h4>
-        <b-input-group id='joint-move-group' class='m-1'>
-          <b-form-input v-model='interactions.moveDelta[0]' step='0.0001' type='number' placeholder='Delta X'></b-form-input>
-          <b-form-input v-model='interactions.moveDelta[1]' step='0.0001' type='number' placeholder='Delta Y'></b-form-input>
-          <b-input-group-append>
-            <b-button @click='moveSelection(interactions.moveDelta)'>Move</b-button>
-          </b-input-group-append>
-        </b-input-group>
         <b-dropdown id='joint-type-combo' class='mx-1' :text='selectedJointsType'>
           <b-dropdown-item @click='setSelectedJointType(jointType.FLOATING)'>Floating</b-dropdown-item>
           <b-dropdown-item @click='setSelectedJointType(jointType.PIN)'>Pin</b-dropdown-item>
@@ -83,14 +76,18 @@
     </div>
     <div id='tutorial-container'>
       <b-popover @hidden='stepTutorial(1)' triggers='manual' title='Mode' ref='modePopover' target='mode-dropdown'>
-        <p>The mode sets the current controls. Right Click drag is always pan, scroll is always zoom, and escape always deselects everything, but left click shifts in purpose.</p>
+        <p>The current controls change depending on the mode. There are a few constants though.</p>
+        <p><b>Right Click Drag</b>: Pan</p>
+        <p><b>Scroll</b>: Zoom</p>
+        <p><b>Escape</b>: Deselect all</p>
         <b-button @click='stepTutorial(1)'>Next</b-button>
       </b-popover>
       <b-popover @hidden='stepTutorial(2)' triggers='manual' title='Modes' ref='modesPopover' target='mode-select'>
-        <p><b>Select (Ctrl+S)</b>: In this mode, left click selects or deselects one joint and left drag selects a range of points. When points are selected, all properties can be changed for the whole group. Pressing r will remove selected joints.</p>
-        <p><b>Joints (Ctrl+J)</b>: In this mode, left click places a joint if one is not nearby, else it selects or deselects one joint. Only joint properties can be edited in this mode. Pressing r will remove the currently selected joint</p>
+        <p><b>Select (Ctrl+S)</b>: In this mode, left click selects or deselects one joint and left drag selects a range of points. When points are selected, all properties can be changed for the whole group. Holding shift and left click dragging moves selected joints. Pressing r will remove selected joints.</p>
+        <p><b>Joints (Ctrl+J)</b>: In this mode, left click places a joint if one is not nearby, else it selects or deselects one joint. Only joint properties can be edited in this mode. Pressing r will remove the currently selected joint.</p>
         <p><b>Members (Ctrl+M)</b>: In this mode, left click selects a joint. A max of two joints can be selected at a time in this mode. Selecting two joints will create a member across them. Selecting another joint will chain the member to the next joint. Pressing r will remove a selected member.</p>
         <p><b>Loads (Ctrl+L)</b>: In this mode, left click will select a single joint. Selecting a joint will apply a load to that point. The load magnitude and direction can be edited on the left. Pressing r will remove the load from the joint.</p>
+        <p><b>Ghost</b>: Enter this mode by left click dragging in select mode or using Ctrl+C to copy joints. In this mode, left click drag moves the ghost. Holding shift snaps the ghost to the grid lines. Pressing enter places the ghost.</p>
         <b-button @click='stepTutorial(2)'>Next</b-button>
       </b-popover>
       <b-popover @hidden='stepTutorial(3)' triggers='manual' title='Undo and Redo' ref='undoRedoPopover' target='undo-redo-buttons'>
@@ -435,6 +432,9 @@ export default {
       this.tutorialStep = -1
       this.tutorialActive = true
       this.removeAll()
+      this.visuals.viewX = 0
+      this.visuals.viewY = 0
+      this.visuals.scale = 50
 
       await sleep(200)
       this.stepTutorial(0)
