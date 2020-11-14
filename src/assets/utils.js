@@ -33,6 +33,7 @@ export const unit = {
 
 export const jointType = {
   PIN: 'Pin',
+  ROLLER: 'Roller',
   FLOATING: 'Floating'
 }
 
@@ -59,6 +60,14 @@ export class Force {
 
   get yComponent () {
     return this.magnitude * Math.sin(this.direction * (Math.PI / 180))
+  }
+
+  add (force) {
+    const totalX = this.xComponent + force.xComponent
+    const totalY = this.yComponent + force.yComponent
+    const dir = Math.atan2(totalY, totalX)
+    const mag = Math.sqrt(totalX ** 2 + totalY ** 2)
+    return new Force(dir * (180 / Math.PI), mag)
   }
 }
 

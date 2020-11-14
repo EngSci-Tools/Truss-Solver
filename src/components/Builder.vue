@@ -50,6 +50,7 @@
         <b-dropdown id='joint-type-combo' class='mx-1' :text='selectedJointsType'>
           <b-dropdown-item @click='setSelectedJointType(jointType.FLOATING)'>Floating</b-dropdown-item>
           <b-dropdown-item @click='setSelectedJointType(jointType.PIN)'>Pin</b-dropdown-item>
+          <b-dropdown-item @click='setSelectedJointType(jointType.ROLLER)'>Roller</b-dropdown-item>
         </b-dropdown>
         <b-button id='joint-remove-button' class='m-1' @click='removeSelectedJoints'>Remove</b-button>
       </div>
@@ -1440,6 +1441,11 @@ export default {
         }
         if (type === jointType.PIN) {
           jointGraph.lineStyle(this.jointRadius / 4, this.renderParams.joint.pinColor)
+          jointGraph.drawCircle(x, y, this.jointRadius * 0.8)
+          jointGraph.lineStyle(0, 0x000000)
+        }
+        if (type === jointType.ROLLER) {
+          jointGraph.lineStyle(this.jointRadius / 4, this.renderParams.joint.pinColor)
           jointGraph.drawCircle(x, y, this.jointRadius)
           jointGraph.lineStyle(0, 0x000000)
         }
@@ -1843,7 +1849,8 @@ export default {
     },
     toggleJointType (jointId) {
       const joint = this.structures.joints[jointId]
-      const newType = joint.type === jointType.PIN ? jointType.FLOATING : jointType.PIN
+      const types = Object.values(jointType)
+      const newType = types[(types.indexOf(joint.type) + 1) % types.length]
       this.execute(new actions.joints.SETTYPE(jointId, joint.type, newType))
     },
     removeAll () {
@@ -2083,7 +2090,7 @@ export default {
       }
       return matrix
     },
-    computeReactionForce (referenceJoint, reactionJoint) {
+    computeVerticalReactionForce (referenceJoint, reactionJoint) {
       // We have to iterate over all forces and sum their moments then divide by the distance to the reaction joint.
       // The reaction joint always provides a force to counter all bridge movement.
       // TODO: MAKE THIS WORK WITH HORIZONTAL NET FORCES
@@ -2105,14 +2112,25 @@ export default {
       const reactionForce = totalMoment / reactionDisplacement[0]
       return new Force(90, -1 * reactionForce)
     },
+    computeHorizontalReactionForce (reactionJoint) {
+      let totalForce = 0
+      for (const force of Object.values(this.structures.loads)) {
+        const { magnitude: mag, direction: dir } = force
+        totalForce += mag * Math.cos(dir * (Math.PI / 180))
+      }
+      return new Force(0, -1 * totalForce)
+    },
     computeReactionForces () {
       const pinnedJoints = Object.fromEntries(Object.entries(this.structures.joints).filter(([id, joint]) => joint.type === jointType.PIN))
-      if (Object.keys(pinnedJoints).length !== 2) {
-        throw new Error('Incorrect number of pinned joints')
+      const rollerJoints = Object.fromEntries(Object.entries(this.structures.joints).filter(([id, joint]) => joint.type === jointType.ROLLER))
+      if (Object.keys(pinnedJoints).length !== 1 || Object.keys(rollerJoints).length !== 1) {
+        throw new Error('Must have one pinned joint and one roller joint')
       }
       const res = {}
-      res[Object.keys(pinnedJoints)[1]] = this.computeReactionForce(...Object.keys(pinnedJoints))
-      res[Object.keys(pinnedJoints).reverse()[1]] = this.computeReactionForce(...Object.keys(pinnedJoints).reverse())
+      const pinnedJoint = Object.keys(pinnedJoints)[0]
+      const rollerJoint = Object.keys(rollerJoints)[0]
+      res[pinnedJoint] = this.computeVerticalReactionForce(rollerJoint, pinnedJoint).add(this.computeHorizontalReactionForce(pinnedJoint))
+      res[rollerJoint] = this.computeVerticalReactionForce(pinnedJoint, rollerJoint)
       return res
     },
     forceSolutionVector (joints) {
@@ -2166,7 +2184,7 @@ export default {
       const forces = {}
       for (let i = 0; i < members.length; i++) {
         const memberId = members[i].sort().join('-')
-        forces[memberId] = toSlideRule(Math.round(solution[i] * 100000) / 100000)
+        forces[memberId] = toSlideRule(Math.round(solution[i] * 10 ** 6) / 10 ** 6)
       }
       this.structures.internalForces = forces
       if (display) {
@@ -2194,6 +2212,7 @@ export default {
       return forces
     },
     onCalculateFailed (message) {
+      console.error(message)
       this.calculatedFailed = true
       this.calculatedFailedMessage = message
       if (this.solution) {
@@ -2216,8 +2235,9 @@ export default {
       const actionArr = []
       try {
         const jointArr = JSON.parse(joints)
-        for (const [id, location, isPin] of jointArr) {
-          actionArr.push(new actions.joints.ADD(location, id, isPin ? jointType.PIN : jointType.FLOATING))
+        const jointTypes = Object.values(jointType)
+        for (const [id, location, type] of jointArr) {
+          actionArr.push(new actions.joints.ADD(location, id, jointTypes[type]))
         }
       } catch (err) { }
       try {
@@ -2246,7 +2266,8 @@ export default {
       } catch (err) { }
     },
     exportJSON () {
-      const joints = Object.entries(this.structures.joints).map(([id, joint]) => [id, joint.pos, joint.type === jointType.PIN ? 1 : undefined])
+      const jointTypes = Object.values(jointType)
+      const joints = Object.entries(this.structures.joints).map(([id, joint]) => [id, joint.pos, jointTypes.indexOf(joint.type)])
       const members = this.structures.members.getAllMembers()
       const forces = Object.entries(this.structures.loads).map(([id, force]) => [id, force.magnitude, force.direction])
       const seperation = [this.visuals.xSep, this.visuals.ySep]
