@@ -1,3 +1,5 @@
+import { jointType } from '@/assets/utils.js'
+
 class QueryConstructor {
   constructor () {
     this.joints = []
@@ -22,12 +24,13 @@ class QueryConstructor {
     return this.jointIndex(id) > -1
   }
 
-  addJoint (id, location, isPin) {
+  addJoint (id, location, type) {
     const index = this.jointIndex(id)
+    const jointTypes = Object.values(jointType)
     if (index > -1) {
-      this.joints[index] = [id, location, isPin]
+      this.joints[index] = [id, location, jointTypes.indexOf(type)]
     } else {
-      this.joints.push([id, location, isPin])
+      this.joints.push([id, location, jointTypes.indexOf(type)])
     }
   }
 
@@ -87,7 +90,13 @@ export class WarrenTrussConstructor extends QueryConstructor {
       const y = i % 2 ? this.height : 0
       const x = this.xStart + i * this.memberLength / 2
       const id = String.fromCharCode(firstId + i)
-      const type = i === 0 || i === this.numNodes - 1 ? 1 : 0
+      let type = jointType.FLOATING
+      if (i === 0) {
+        type = jointType.PIN
+      }
+      if (i === this.numNodes - 1) {
+        type = jointType.ROLLER
+      }
       this.addJoint(id, [x, y], type)
     }
   }
