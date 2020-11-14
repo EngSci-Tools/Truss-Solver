@@ -8,7 +8,8 @@ export const placeType = { // Used to define what clicks do. Right drag always p
   SELECTING: 'Selecting', // Can make infinite selections. Used to do en masse chages like moving or deleting (Deleting joints, members, or forces)
   JOINT: 'Joints', // Left click places a joint and selects the joint. Shift left click changes the joint type. Only one joint can be selected at a time.
   MEMBER: 'Members', // Left click selects a joint, then another. On second selection places a member. Selecting another rotates the selection so the second and third are selected and places a joint. Delete removes one joint.
-  FORCE: 'Loads' // Left click on a joint places a force and selects it. Selecting many forces allows you to change all their values at once.
+  FORCE: 'Loads', // Left click on a joint places a force and selects it. Selecting many forces allows you to change all their values at once.
+  GHOST: 'ghost' // Used to prevent user from doing other actions while a ghost exists
 }
 
 export const interactionType = {
@@ -16,10 +17,12 @@ export const interactionType = {
   LEFTCLICK: 'leftClick',
   LEFTCLICKDOWN: 'leftClickDown',
   LEFTDRAG: 'leftDrag',
+  LEFTDRAGSTART: 'leftDragStart',
   LEFTDRAGUP: 'leftDragUP',
   RIGHTCLICK: 'rightClick',
   RIGHTCLICKDOWN: 'rightClickDown',
   RIGHTDRAG: 'rightDrag',
+  RIGHTDRAGSTART: 'rightDragStart',
   RIGHTDRAGUP: 'rightDragUP'
 }
 

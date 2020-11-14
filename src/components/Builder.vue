@@ -46,6 +46,13 @@
       <!-- <b-button class='m-1 mt-1' @click='getInternalForces(true)' :variant='calculatedFailed ? "danger" : ""'>{{ calculatedFailed ? calculatedFailedMessage : 'Caculate' }}</b-button> -->
       <div v-if='jointSelected' class='container'>
         <h4 class='m-1 mt-3'>Joints:</h4>
+        <b-input-group id='joint-move-group' class='m-1'>
+          <b-form-input v-model='interactions.moveDelta[0]' step='0.0001' type='number' placeholder='Delta X'></b-form-input>
+          <b-form-input v-model='interactions.moveDelta[1]' step='0.0001' type='number' placeholder='Delta Y'></b-form-input>
+          <b-input-group-append>
+            <b-button @click='moveSelection(interactions.moveDelta)'>Move</b-button>
+          </b-input-group-append>
+        </b-input-group>
         <b-dropdown id='joint-type-combo' class='mx-1' :text='selectedJointsType'>
           <b-dropdown-item @click='setSelectedJointType(jointType.FLOATING)'>Floating</b-dropdown-item>
           <b-dropdown-item @click='setSelectedJointType(jointType.PIN)'>Pin</b-dropdown-item>
@@ -139,9 +146,10 @@ export default {
     placeType,
     jointType,
 
-    history: [],
+    history: [], // These store lists of actions so that they can be reversed for the ctrl+z and ctrl+shift+z
     undoneActions: [],
-    showingResults: false,
+
+    showingResults: false, // This is not used right now, it will be.
     copied: false,
 
     calculatedFailed: false,
@@ -171,7 +179,9 @@ export default {
       dragging: false,
       dragStart: [], // Stores where a drag started so that we can draw selections correctly. Stored in point coordinate system
       heldKeys: [],
-      callbacks: {}
+      callbacks: {},
+
+      moveDelta: [undefined, undefined]
     },
 
     selections: { // Could probably be inside interactions, but it makes watching code more complicated. Lists of points stored in point coordinate system
@@ -183,6 +193,17 @@ export default {
       members: new MemberGraph(),
       internalForces: {},
       loads: {} // Forces take the key of their joint and have a value of their force
+    },
+
+    ghostStructures: { // Used to show action ramifications before they occur
+      active: false,
+      displacement: [0, 0],
+      preDragPos: [0, 0],
+      movingJoints: [],
+      copied: false,
+      joints: {},
+      members: new MemberGraph(),
+      loads: {}
     },
 
     renderParams: {
@@ -216,6 +237,11 @@ export default {
       jointGraph: new Graphics(),
       memberGraph: new Graphics(),
       loadsGraph: new Graphics(),
+
+      ghostBridge: new Container(),
+      ghostJoint: new Graphics(),
+      ghostMember: new Graphics(),
+      ghostLoad: new Graphics(),
 
       textContainer: new Container(),
       jointText: {},
@@ -292,7 +318,7 @@ export default {
       const { heldKeys } = this.interactions
       if (this.holdingKey('MetaLeft') || this.holdingKey('ControlLeft')) { // For mac and windows respectivly
         return mode.COMMAND
-      } if (this.holdingKey('ShiftLeft')) {
+      } else if (this.holdingKey('ShiftLeft')) {
         return mode.SECONDARY
       } else {
         return mode.PRIMARY
@@ -513,6 +539,7 @@ export default {
     // Used for ui
     setMode (mode) {
       this.interactions.placeType = mode
+      this.ghostCancel()
       this.onAllDeselected()
     },
 
@@ -598,6 +625,7 @@ export default {
       if (record) {
         this.history.push(actions)
       }
+      this.ghostCancel()
       this.redraw()
       this.toQueryString()
       this.getInternalForces()
@@ -953,7 +981,10 @@ export default {
       this.pixi.app.view.addEventListener('wheel', e => {
         // TODO: Make this zoom at the center of the screen instead of [0, 0]
         this.interactions.pointBeforeScale = this.pixToPoint(this.interactions.mousePos)
-        this.visuals.scale -= e.deltaY / 2
+        let finalScale = this.visuals.scale - e.deltaY / 2
+        finalScale = Math.min(this.visuals.scaleMax, finalScale)
+        finalScale = Math.max(this.visuals.scaleMin, finalScale)
+        this.visuals.scale = finalScale
         e.preventDefault()
         return false
       })
@@ -1047,8 +1078,18 @@ export default {
       this.interactions.mousePos = [x, y]
       if (this.interactions.leftMouseDown || this.interactions.rightMouseDown) {
         const dSqr = (this.mousePoint[0] - this.interactions.dragStart[0]) ** 2 + (this.mousePoint[1] - this.interactions.dragStart[1]) ** 2
-        if (dSqr > 0.01) {
+        if (dSqr > 0.01 && !this.interactions.dragging) {
           this.interactions.dragging = true
+          if (this.interactions.leftMouseDown) {
+            for (const { keyFilter, callback } of this.getCurrCallbacks(interactionType.LEFTDRAGSTART)) {
+              callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart, delta: [dx, dy] })
+            }
+          }
+          if (this.interactions.rightMouseDown) {
+            for (const { keyFilter, callback } of this.getCurrCallbacks(interactionType.RIGHTDRAGSTART)) {
+              callback({ keyCode: undefined, mousePoint: this.mousePoint, dragStart: this.interactions.dragStart, delta: [dx, dy] })
+            }
+          }
         }
       }
       const { dragging } = this.interactions
@@ -1104,11 +1145,16 @@ export default {
       })
       this.on({ modes: mode.PRIMARY, interactions: interactionType.KEYPRESS, keyFilter: ['Escape'] }, () => {
         this.onAllDeselected()
+        if (this.ghostStructures.active) {
+          this.ghostCancel()
+          this.setMode(placeType.SELECTING)
+        }
       })
       this.addSelectionListeners()
       this.addJointListeners()
       this.addMemberListeners()
       this.addForceListeners()
+      this.addGhostListeners()
     },
     addSelectionListeners () {
       // When the user left clicks near a joint, we select it. If it is selected, we deselect it. If there is no near point, we deselect all.
@@ -1131,6 +1177,9 @@ export default {
       // When the user drags while selecting, we draw a selection box
       this.on({ modes: mode.PRIMARY, placetypes: placeType.SELECTING, interactions: interactionType.LEFTDRAG }, ({ dragStart, mousePoint }) => {
         this.drawSelectionGraph(dragStart, mousePoint)
+      })
+      this.on({ modes: mode.COMMAND, placetypes: placeType.SELECTING, interactions: interactionType.KEYPRESS, keyFilter: ['KeyA'] }, () => {
+        this.onJointsSelected(Object.keys(this.structures.joints))
       })
     },
     addJointListeners () {
@@ -1199,6 +1248,40 @@ export default {
         }
       })
     },
+    addGhostListeners () {
+      this.on({ modes: mode.SECONDARY, placetypes: placeType.SELECTING, interactions: interactionType.LEFTDRAGSTART }, () => {
+        if (this.selections.joints.length > 0) {
+          this.ghostStructures.preDragPos = [0, 0]
+          this.ghostStructures.copied = false
+          this.ghostStructures.movingJoints = [...this.selections.joints]
+          this.ghostFrom(Object.keys(this.structures.joints))
+        }
+      })
+      this.on({ modes: mode.COMMAND, placetypes: placeType.SELECTING, interactions: interactionType.KEYPRESS, keyFilter: ['KeyC'] }, () => {
+        if (this.selections.joints.length > 0) {
+          this.ghostStructures.preDragPos = [0, 0]
+          this.ghostStructures.copied = true
+          this.ghostStructures.movingJoints = [...this.selections.joints]
+          this.ghostFrom(this.selections.joints)
+        }
+      })
+      this.on({ modes: [mode.PRIMARY, mode.SECONDARY], placetypes: placeType.GHOST, interactions: interactionType.LEFTDRAGSTART }, () => {
+        this.ghostStructures.preDragPos = [...this.ghostStructures.displacement]
+      })
+      this.on({ modes: [mode.PRIMARY, mode.SECONDARY], placetypes: placeType.GHOST, interactions: interactionType.LEFTDRAG }, ({ dragStart, mousePoint }) => {
+        const delta = [mousePoint[0] - dragStart[0] + this.ghostStructures.preDragPos[0], mousePoint[1] - dragStart[1] + this.ghostStructures.preDragPos[1]]
+        const nearest = this.pointToNearest(delta, 4)
+        if (!this.holdingKey('ShiftLeft')) {
+          this.ghostMoveTo(delta, this.ghostStructures.movingJoints)
+        } else {
+          this.ghostMoveTo(nearest, this.ghostStructures.movingJoints)
+        }
+      })
+      this.on({ modes: [mode.PRIMARY, mode.SECONDARY], placetypes: placeType.GHOST, interactions: interactionType.KEYPRESS, keyFilter: ['Enter'] }, () => {
+        this.ghostPlace(this.ghostStructures.copied)
+        this.ghostStructures.copied = false
+      })
+    },
 
     // New mouse interaction methods
     on ({ modes, placetypes, interactions, keyFilter }, callback) {
@@ -1232,6 +1315,13 @@ export default {
       callbacks[mode][placetype] = callbacks[mode][placetype] || {}
       callbacks[mode][placetype][interaction] = callbacks[mode][placetype][interaction] || []
       this.interactions.callbacks[mode][placetype][interaction].push({ keyFilter, callback })
+    },
+    getCurrCallbacks (interaction) {
+      const callbacks = this.interactions.callbacks
+      callbacks[this.mode] = callbacks[this.mode] || {}
+      callbacks[this.mode][this.interactions.placeType] = callbacks[this.mode][this.interactions.placeType] || {}
+      callbacks[this.mode][this.interactions.placeType][interaction] = callbacks[this.mode][this.interactions.placeType][interaction] || []
+      return callbacks[this.mode][this.interactions.placeType][interaction]
     },
 
     // Helpers for selecting
@@ -1270,10 +1360,20 @@ export default {
 
     // Render Methods
     setupChildren () {
-      const { background, bridge, textContainer, backgroundGraph, selectionGraph, jointGraph, memberGraph, loadsGraph, app } = this.pixi
+      const {
+        background, bridge, textContainer,
+        backgroundGraph, selectionGraph, jointGraph, memberGraph,
+        loadsGraph, ghostBridge, ghostJoint, ghostMember, ghostLoad,
+        app
+      } = this.pixi
       background.addChild(backgroundGraph)
       background.addChild(selectionGraph)
       app.stage.addChild(background)
+
+      ghostBridge.addChild(ghostMember)
+      ghostBridge.addChild(ghostLoad)
+      ghostBridge.addChild(ghostJoint)
+      app.stage.addChild(ghostBridge)
 
       bridge.addChild(memberGraph)
       bridge.addChild(loadsGraph)
@@ -1292,11 +1392,18 @@ export default {
     redraw () {
       this.drawBackground()
       this.drawBridge()
+      this.drawGhost()
     },
     drawBridge () {
       this.drawMemberGraph()
       this.drawLoadsGraph()
       this.drawJointGraph()
+    },
+    drawGhost () {
+      this.pixi.ghostBridge.alpha = 0.4
+      this.drawGhostMember()
+      this.drawGhostLoad()
+      this.drawGhostJoint()
     },
     drawBackground () {
       this.drawBackgroundGraph()
@@ -1333,6 +1440,25 @@ export default {
         // text.style.fill = joint.type === jointType.PIN ?
       }
       /* eslint-enable no-unused-vars */
+    },
+    drawGhostJoint () {
+      const { ghostJoint } = this.pixi
+      ghostJoint.clear()
+
+      if (this.ghostStructures.active) {
+        for (const joint of Object.values(this.ghostStructures.joints)) {
+          const [x, y] = this.pointToPix(joint.pos)
+          const type = joint.type
+          ghostJoint.beginFill(this.renderParams.joint.defaultColor)
+          ghostJoint.drawCircle(x, y, this.jointRadius)
+          ghostJoint.endFill()
+          if (type === jointType.PIN) {
+            ghostJoint.lineStyle(this.jointRadius / 4, this.renderParams.joint.pinColor)
+            ghostJoint.drawCircle(x, y, this.jointRadius)
+            ghostJoint.lineStyle(0, 0x000000)
+          }
+        }
+      }
     },
     drawMemberGraph () {
       // Renders the members based of off the structures.members graph
@@ -1401,6 +1527,25 @@ export default {
         memberGraph.lineTo(x2, y2)
       }
     },
+    drawGhostMember () {
+      const { ghostMember } = this.pixi
+      const { members, active, joints } = this.ghostStructures
+      ghostMember.clear()
+
+      if (active) {
+        for (const [idOne, idTwo] of members.getAllMembers()) {
+          const jointOne = joints[idOne]
+          const jointTwo = joints[idTwo]
+
+          const [x1, y1] = this.pointToPix(jointOne.pos)
+          const [x2, y2] = this.pointToPix(jointTwo.pos)
+
+          ghostMember.lineStyle(this.jointRadius / 2, this.renderParams.member.defaultColor, 1)
+          ghostMember.moveTo(x1, y1)
+          ghostMember.lineTo(x2, y2)
+        }
+      }
+    },
     drawLoadsGraph () {
       // Renders the loads based of off the structures.loads graph
       const { loadsGraph } = this.pixi
@@ -1460,6 +1605,63 @@ export default {
         loadsGraph.lineTo(flangeTwoX, flangeTwoY)
       }
     },
+    drawGhostLoad () {
+      const { ghostLoad } = this.pixi
+      const { active, loads, joints } = this.ghostStructures
+      ghostLoad.clear()
+
+      const magnitudes = Object.values(loads).map(force => force.magnitude)
+      const maxMag = Math.max(...magnitudes)
+      const minMag = Math.min(...magnitudes)
+      const maxDist = this.jointRadius * 6
+      const minDist = this.jointRadius * 3
+      const flangeLength = this.jointRadius
+      function getLength (force) {
+        if (magnitudes.length < 2 || maxMag === minMag) {
+          return (maxDist + minDist) / 2
+        }
+        const mag = force.magnitude
+        // Linearly interpolate between maxMag and minMag and self.radius * 1.2 and self.radius * 2.5
+        return (((mag - minMag) / (maxMag - minMag)) * (maxDist - minDist)) + minDist
+      }
+      function flangeEnd (direction, startX, startY) {
+        const dx = flangeLength * Math.cos(direction * (Math.PI / 180))
+        const dy = -1 * flangeLength * Math.sin(direction * (Math.PI / 180))
+        const flangeX = startX + dx
+        const flangeY = startY + dy
+        return [flangeX, flangeY]
+      }
+
+      if (active) {
+        for (const [jointId, force] of Object.entries(loads)) {
+          ghostLoad.lineStyle(this.jointRadius / 4, this.renderParams.force.defaultColor, 1)
+
+          const joint = joints[jointId]
+
+          const [x, y] = this.pointToPix(joint.pos)
+          const length = getLength(force)
+          const dx = length * Math.cos(force.direction * (Math.PI / 180))
+          const dy = -1 * length * Math.sin(force.direction * (Math.PI / 180))
+
+          const endX = x + dx
+          const endY = y + dy
+
+          ghostLoad.moveTo(x, y)
+          ghostLoad.lineTo(endX, endY)
+
+          const flangeOneDir = force.direction - 40 + 180
+          const flangeTwoDir = force.direction + 40 + 180
+
+          const [flangeOneX, flangeOneY] = flangeEnd(flangeOneDir, endX, endY)
+          const [flangeTwoX, flangeTwoY] = flangeEnd(flangeTwoDir, endX, endY)
+
+          ghostLoad.moveTo(endX, endY)
+          ghostLoad.lineTo(flangeOneX, flangeOneY)
+          ghostLoad.moveTo(endX, endY)
+          ghostLoad.lineTo(flangeTwoX, flangeTwoY)
+        }
+      }
+    },
     drawBackgroundGraph () {
       const { backgroundGraph } = this.pixi
       const { height, width, scale, ySep, xSep, viewX, viewY } = this.visuals
@@ -1506,10 +1708,10 @@ export default {
     },
 
     // These functions take us between the point coordiante frame and pixel coordinate frame. They are confusing and I just wrote them by trial and error. Who wants to do math?
-    pointToNearest ([x, y]) {
+    pointToNearest ([x, y], subdivide = 1) {
       // "Rounds" the point to the nearest tick mark.
       const { xSep, ySep } = this.visuals
-      return [Math.round(x / xSep) * xSep, Math.round(y / ySep) * ySep]
+      return [Math.round((x * subdivide) / xSep) * xSep / subdivide, Math.round((y * subdivide) / ySep) * ySep / subdivide]
     },
     pixToPoint ([pixX, pixY], toNearest = false) {
       // Outputs the point cooresponding to the pixel values. toNearest rounds for convenience.
@@ -1561,7 +1763,7 @@ export default {
       return joints
     },
 
-    getNextJointId () {
+    getNextJointId (lastId) {
       // Ids go A->B->C->...->Z->AA->...->AZ->BA->...->BZ->...
       // It doesn't actually do that but I can't be bothered to write a function that works right now. TODO!!!
       if (this.jointIds.length === 0) {
@@ -1575,7 +1777,7 @@ export default {
           return idTwo.charCodeAt(idTwo.length - 1) - idOne.charCodeAt(idOne.length - 1)
         }
       }
-      const lastId = this.jointIds.sort(compare)[0]
+      lastId = lastId || this.jointIds.sort(compare)[0]
       const lastChar = lastId.charCodeAt(lastId.length - 1)
       if (lastChar >= 90) {
         return `${lastId.substring(0, lastId.length - 1)}AA`
@@ -1639,6 +1841,18 @@ export default {
       this.removeSelectedJoints()
       this.history = []
     },
+    moveSelection ([dx = 0, dy = 0]) {
+      dx = parseFloat(dx)
+      dy = parseFloat(dy)
+      if (this.selections.joints.length > 0) {
+        console.log('moving', this.selections.joints, 'by', dx, dy)
+        const actionsList = []
+        for (const id of this.selections.joints) {
+          actionsList.push(new actions.joints.MOVE([dx, dy], id))
+        }
+        this.execute(actionsList)
+      }
+    },
 
     addMember (jointOne, jointTwo) {
       this.execute(new actions.members.ADD(jointOne, jointTwo))
@@ -1693,6 +1907,145 @@ export default {
         currActions.push(new actions.forces.SETDIR(jointId, force.direction, direction))
       }
       this.execute(currActions)
+    },
+
+    // Ghost methods
+    ghostFrom (jointArr) {
+      this.ghostStructures.displacement = [0, 0]
+
+      const joints = {}
+      const members = new MemberGraph()
+      const loads = {}
+
+      for (const jointId of jointArr) {
+        if (jointId in this.structures.joints) {
+          const joint = this.structures.joints[jointId]
+          joints[jointId] = new Joint(joint.pos, joint.type)
+          members.addJoint(jointId)
+        }
+        if (jointId in this.structures.loads) {
+          const force = this.structures.loads[jointId]
+          loads[jointId] = new Force(force.direction, force.magnitude)
+        }
+      }
+
+      const memberList = this.structures.members.getAllMembers(jointArr)
+      for (const [jointOne, jointTwo] of memberList) {
+        if (members.hasJoint(jointOne) && members.hasJoint(jointTwo)) {
+          members.addMember(jointOne, jointTwo)
+        }
+      }
+      this.onAllDeselected()
+      this.ghostStructures.joints = joints
+      this.ghostStructures.members = members
+      this.ghostStructures.loads = loads
+      this.ghostStructures.active = true
+      this.interactions.placeType = placeType.GHOST
+      this.drawGhost()
+    },
+    ghostMove ([dx, dy], jointFilter) {
+      const { joints } = this.ghostStructures
+      jointFilter = jointFilter || Object.keys(joints)
+      for (const jointId of jointFilter) {
+        if (jointId in joints) {
+          const pos = joints[jointId].pos
+          pos[0] += dx
+          pos[1] += dy
+        }
+      }
+      this.ghostStructures.displacement[0] += dx
+      this.ghostStructures.displacement[1] += dy
+      this.drawGhost()
+    },
+    ghostMoveTo ([x, y], jointFilter) {
+      const dx = x - this.ghostStructures.displacement[0]
+      const dy = y - this.ghostStructures.displacement[1]
+      this.ghostMove([dx, dy], jointFilter)
+    },
+    ghostCancel () {
+      this.ghostStructures.active = false
+      this.drawGhost()
+    },
+    ghostPlace (paste = false) {
+      // Places the ghost at the location
+      // If paste is true all joints except those that overlap with an existing one are generated
+      // If paste is false, the true joints move to their new locations
+
+      if (this.ghostStructures.active) {
+        const actionList = []
+        if (paste) {
+          // AHHH it's so long!!!
+          const overlaps = {} // Stores overlaps as {ghostJoint: trueJoint} so we can just do if (ghostJoint in overlaps) { use actual joint instead }
+
+          const trueJoints = Object.entries(this.structures.joints)
+          for (const [ghostId, ghostJoint] of Object.entries(this.ghostStructures.joints)) {
+            const [ghostX, ghostY] = ghostJoint.pos
+            const trueJoint = trueJoints.find(([jointId, joint]) => {
+              const [x, y] = joint.pos
+              return Math.abs(x - ghostX) < 0.001 && Math.abs(y - ghostY) < 0.001 // I just chose a random epsilon for this floating point imprecision
+            })
+            if (trueJoint != null) {
+              overlaps[ghostId] = trueJoint[0]
+            }
+          }
+
+          const idMap = {}
+          let nextId = this.getNextJointId()
+          for (const [ghostId, joint] of Object.entries(this.ghostStructures.joints)) {
+            if (!(ghostId in overlaps)) {
+              actionList.push(new actions.joints.ADD(joint.pos, nextId, joint.type))
+              idMap[ghostId] = nextId
+              nextId = this.getNextJointId(nextId)
+            }
+          }
+
+          for (let [jointOne, jointTwo] of this.ghostStructures.members.getAllMembers()) {
+            jointOne = overlaps[jointOne] || idMap[jointOne]
+            jointTwo = overlaps[jointTwo] || idMap[jointTwo]
+
+            actionList.push(new actions.members.ADD(jointOne, jointTwo))
+          }
+
+          for (const [ghostId, force] of Object.entries(this.ghostStructures.loads)) {
+            if (ghostId in idMap) {
+              const id = idMap[ghostId]
+              actionList.push(new actions.forces.ADD(id, force.magnitude, force.direction))
+            }
+          }
+        } else {
+          for (const [id, ghostJoint] of Object.entries(this.ghostStructures.joints)) {
+            if (id in this.structures.joints) {
+              const joint = this.structures.joints[id]
+              const { pos: newPos, type: newType } = ghostJoint
+              const delta = [newPos[0] - joint.pos[0], newPos[1] - joint.pos[1]]
+              if (delta[0] !== 0 || delta[1] !== 0) {
+                actionList.push(new actions.joints.MOVE(delta, id))
+              }
+              if (joint.type !== newType) {
+                actionList.push(new actions.joints.SETTYPE(id, joint.type, newType))
+              }
+            }
+          }
+        }
+        this.execute(actionList)
+        this.setMode(placeType.SELECTING)
+        this.ghostCancel()
+      }
+    },
+    async testGhost () {
+      this.removeAll()
+      this.exampleBridge()
+      this.ghostFrom(Object.keys(this.structures.joints))
+      this.ghostMove([0, 2], ['B', 'D', 'C'])
+      // await sleep(3000)
+      // this.ghostPlace()
+      // await sleep(3000)
+      // this.removeAll()
+      // this.exampleBridge()
+      // this.ghostFrom(Object.keys(this.structures.joints))
+      // this.ghostMove([0, 2], ['B', 'D', 'C'])
+      // await sleep(3000)
+      // this.ghostPlace(true)
     },
 
     toSlideRule (num) {
@@ -1891,6 +2244,7 @@ export default {
     position: absolute;
     pointer-events: none;
     text-align: left;
+    user-select: none;
 
     *:not(.container) {
       pointer-events: auto;
