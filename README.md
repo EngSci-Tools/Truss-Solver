@@ -11,11 +11,12 @@ Basic Controls:
    1. Force: Left click selects a nearby joint. It also places a force of 1kN in the down direction to the joint.
 
 Todo:
-- [ ] Allow users to move joints.
+- [x] Allow users to move joints.
 - [ ] Compute horizontal reaction forces.
 - [ ] Add more truss types.
 - [ ] Make the home page look better.
 - [ ] Create a "Show my work" view.
 - [ ] Add a deflection solver.
+- [ ] Create a way to analyze specific members
 
 If you want to solve one of these, shoot me a message on the discord and I will point you to the relative components in the code.
