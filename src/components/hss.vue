@@ -1,10 +1,38 @@
 <template>
   <div id='hss'>
-    <p>Minimum area: {{ toSlideRule(minValueMembers.minA.minA) }}</p>
-    <p>Minimum i: {{ toSlideRule(minValueMembers.minI.minI) }}</p>
-    <p>Minimum radius: {{ toSlideRule(minValueMembers.minR.minR) }}</p>
-    <p>We choose: {{ bestHss.hss }}</p>
-    <p>Area: {{ bestHss.area }}, i: {{ bestHss.i }}, radius: {{ bestHss.radius }}</p>
+    <div id='all'>
+      <b-table-simple striped bordered>
+        <b-thead>
+          <b-tr>
+            <b-td>Member</b-td>
+            <b-td>Length</b-td>
+            <b-td>Force</b-td>
+            <b-td>Min Area</b-td>
+            <b-td>Min i</b-td>
+            <b-td>Min Radius</b-td>
+          </b-tr>
+        </b-thead>
+        <b-tbody>
+          <b-tr v-for='(member, index) in minValueMembers.members' :key='index'>
+            <b-td>{{ member.member.join('-') }}</b-td>
+            <b-td>{{ toSlideRule(member.length) }} m</b-td>
+            <b-td>{{ toSlideRule(member.force) }} kN</b-td>
+            <b-td>{{ toSlideRule(member.minA) }} mm<sup>2</sup></b-td>
+            <b-td v-if='member.minI'>{{ toSlideRule(member.minI) }} 10<sup>6</sup>mm<sup>4</sup></b-td>
+            <b-td v-else></b-td>
+            <b-td v-if='member.minR'>{{ toSlideRule(member.minR) }} mm</b-td>
+            <b-td v-else></b-td>
+          </b-tr>
+        </b-tbody>
+      </b-table-simple>
+    </div>
+    <div id='best'>
+      <p>Minimum area: {{ toSlideRule(minValueMembers.minA.minA) }} mm<sup>2</sup></p>
+      <p>Minimum i: {{ toSlideRule(minValueMembers.minI.minI) }} 10<sup>6</sup>mm<sup>4</sup></p>
+      <p>Minimum radius: {{ toSlideRule(minValueMembers.minR.minR) }} mm</p>
+      <p>We choose: {{ bestHss.hss }}</p>
+      <p>Area: {{ bestHss.area }} mm<sup>2</sup>, i: {{ bestHss.i }} 10<sup>6</sup>mm<sup>4</sup>, radius: {{ bestHss.radius }} mm</p>
+    </div>
   </div>
 </template>
 
@@ -107,5 +135,18 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+#hss {
+  display: flex;
+  flex-direction: row;
+  padding: 10px;
 
+  #best {
+    width: 50%;
+    padding-left: 10px;
+  }
+
+  #all {
+    width: 50%;
+  }
+}
 </style>
