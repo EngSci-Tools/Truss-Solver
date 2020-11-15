@@ -9,7 +9,7 @@
     </b-thead>
     <b-tbody>
       <b-tr v-for='(equation, jointIndex) in componentMatrix' :key='jointIndex'>
-        <b-td class='joint-cell' :class='{hovered: isHovered(jointIndex, -2)}' >{{ jointVector[Math.floor(jointIndex / 2)] }}</b-td>
+        <b-td class='joint-cell' :class='{hovered: isHovered(jointIndex, -2)}' >&Sigma;F<sub>{{ jointVector[Math.floor(jointIndex / 2)] }}, {{ jointIndex % 2 ? 'x' : 'y' }}</sub> = 0</b-td>
         <b-td
           :class='{hovered: isHovered(jointIndex, equationIndex), zero: Math.abs(component) < 10 ** -6}'
           @mouseleave='onCellDehover()'

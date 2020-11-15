@@ -1,7 +1,7 @@
 <template>
   <div id='hss'>
     <div id='all'>
-      <b-table-simple striped bordered>
+      <b-table-simple striped>
         <b-thead>
           <b-tr>
             <b-td>Member</b-td>
@@ -10,28 +10,44 @@
             <b-td>Min Area</b-td>
             <b-td>Min i</b-td>
             <b-td>Min Radius</b-td>
+            <b-td>Optimal HSS</b-td>
           </b-tr>
         </b-thead>
         <b-tbody>
           <b-tr v-for='(member, index) in minValueMembers.members' :key='index'>
             <b-td>{{ member.member.join('-') }}</b-td>
-            <b-td>{{ toSlideRule(member.length) }} m</b-td>
-            <b-td>{{ toSlideRule(member.force) }} kN</b-td>
-            <b-td>{{ toSlideRule(member.minA) }} mm<sup>2</sup></b-td>
-            <b-td v-if='member.minI'>{{ toSlideRule(member.minI) }} 10<sup>6</sup>mm<sup>4</sup></b-td>
+            <b-td>{{ toSlideRule(member.length) }} <span class='unit'>m</span></b-td>
+            <b-td>{{ toSlideRule(member.force) }} <span class='unit'>kN</span></b-td>
+            <b-td>{{ toSlideRule(member.minA) }} <span class='unit'>mm<sup>2</sup></span></b-td>
+            <b-td v-if='member.minI'>{{ toSlideRule(member.minI) }} <span class='unit'>10<sup>6</sup>mm<sup>4</sup></span></b-td>
             <b-td v-else></b-td>
-            <b-td v-if='member.minR'>{{ toSlideRule(member.minR) }} mm</b-td>
+            <b-td v-if='member.minR'>{{ toSlideRule(member.minR) }} <span class='unit'>mm</span></b-td>
             <b-td v-else></b-td>
+            <b-td>{{ member.hss.hss }}</b-td>
           </b-tr>
         </b-tbody>
       </b-table-simple>
     </div>
     <div id='best'>
-      <p>Minimum area: {{ toSlideRule(minValueMembers.minA.minA) }} mm<sup>2</sup></p>
-      <p>Minimum i: {{ toSlideRule(minValueMembers.minI.minI) }} 10<sup>6</sup>mm<sup>4</sup></p>
-      <p>Minimum radius: {{ toSlideRule(minValueMembers.minR.minR) }} mm</p>
-      <p>We choose: {{ bestHss.hss }}</p>
-      <p>Area: {{ bestHss.area }} mm<sup>2</sup>, i: {{ bestHss.i }} 10<sup>6</sup>mm<sup>4</sup>, radius: {{ bestHss.radius }} mm</p>
+      <b-card no-body>
+        <b-card-body class='pb-2'>
+          <b-card-title>Analysis</b-card-title>
+          <b-card-text><b>Minimums:</b></b-card-text>
+        </b-card-body>
+        <b-list-group flush>
+          <b-list-group-item><b class='ml-3'>Area</b> {{ toSlideRule(minValueMembers.minA.minA) }} <span class='unit'>mm<sup>2</sup></span></b-list-group-item>
+          <b-list-group-item><b class='ml-3'>i</b> {{ toSlideRule(minValueMembers.minI.minI) }} <span class='unit'>10<sup>6</sup>mm<sup>4</sup></span></b-list-group-item>
+          <b-list-group-item><b class='ml-3'>Radius</b> {{ toSlideRule(minValueMembers.minR.minR) }} <span class='unit'>mm</span></b-list-group-item>
+        </b-list-group>
+        <b-card-body class='pb-2 mt-1'>
+          <b-card-text><b>Suggestion: {{ bestHss.hss }}</b></b-card-text>
+        </b-card-body>
+        <b-list-group flush>
+          <b-list-group-item><b class='ml-3'>Area</b> {{ bestHss.area }} <span class='unit'>mm<sup>2</sup></span></b-list-group-item>
+          <b-list-group-item><b class='ml-3'>i</b> {{ bestHss.i }} <span class='unit'>10<sup>6</sup>mm<sup>4</sup></span></b-list-group-item>
+          <b-list-group-item><b class='ml-3'>Radius</b> {{ bestHss.radius }} <span class='unit'>mm</span></b-list-group-item>
+        </b-list-group>
+      </b-card>
     </div>
   </div>
 </template>
@@ -63,7 +79,8 @@ export default {
           const minA = this.calculateMinA(force, this.yieldStress, FOS)
           const minI = this.calculateMinI(force, length, this.stiffness, FOS)
           const minR = this.calculateMinR(length)
-          const memberCon = { member, length, force, minA, minI, minR, FOS }
+          const hss = this.getOptimalHss(minA, minI, minR) || { hss: 'None' }
+          const memberCon = { member, length, force, minA, minI, minR, FOS, hss }
           memberConstraints.push(memberCon)
           if (minA > minAMember.minA) {
             minAMember = memberCon
@@ -77,7 +94,8 @@ export default {
         } else if (force > 0) {
           const FOS = 2
           const minA = this.calculateMinA(force, this.yieldStress, FOS)
-          const memberCon = { member, length, force, minA, FOS }
+          const hss = this.getOptimalHss(minA) || { hss: 'None' }
+          const memberCon = { member, length, force, minA, FOS, hss }
           memberConstraints.push(memberCon)
           if (minA > minAMember.minA) {
             minAMember = memberCon
@@ -103,17 +121,17 @@ export default {
       return Object.keys(hss).map(key => ({ hss: key, ...getWidthHeightDepth(key), ...hss[key] }))
     },
     bestHss () {
-      return [...this.hss].filter(sec => this.hssIsValid(sec)).sort((a, b) => a.mass - b.mass)[0]
+      const mins = this.minValueMembers
+      return this.getOptimalHss(mins.minA.minA, mins.minI.minI, mins.minR.minR)
     }
   },
   methods: {
     toSlideRule,
-    hssIsValid (sec) {
-      const mins = this.minValueMembers
-      const minA = mins.minA.minA
-      const minI = mins.minI.minI
-      const minR = mins.minR.minR
-      return sec.area >= minA && sec.i >= minI && sec.radius >= minR
+    hssIsValid (sec, minA, minI, minR) {
+      return sec.area >= minA && (minI == null || sec.i >= minI) && (minR == null || sec.radius >= minR)
+    },
+    getOptimalHss (minA, minI, minR) {
+      return [...this.hss].filter(sec => this.hssIsValid(sec, minA, minI, minR)).sort((a, b) => a.mass - b.mass)[0]
     },
     calculateMinA (force, yieldStress, FOS) {
       // Force in kN and yieldStress in MPa. Returns A in mm^2
@@ -134,19 +152,26 @@ export default {
 }
 </script>
 
-<style lang="scss" scoped>
+<style lang="scss">
 #hss {
   display: flex;
   flex-direction: row;
   padding: 10px;
+  max-height: 100%;
 
   #best {
-    width: 50%;
+    width: 30%;
     padding-left: 10px;
   }
 
   #all {
-    width: 50%;
+    width: 70%;
+    overflow: scroll;
+    border: 1px solid #dee2e6;
+
+    thead * {
+      border: none;
+    }
   }
 }
 </style>

@@ -6,10 +6,16 @@
       ></Builder>
     </div>
     <div id='truss-analysis' ref='trussAnalysis'>
-      <HSS :solution='trussAnalysis'></HSS>
-      <ComponentTable
-        :solution='trussAnalysis'
-      ></ComponentTable>
+      <b-tabs>
+        <b-tab title='HSS Analysis'>
+          <HSS :solution='trussAnalysis'></HSS>
+        </b-tab>
+        <b-tab title='Solution Matrix'>
+          <ComponentTable
+            :solution='trussAnalysis'
+          ></ComponentTable>
+        </b-tab>
+      </b-tabs>
     </div>
   </div>
 </template>
@@ -43,7 +49,7 @@ export default {
 }
 </script>
 
-<style lang="scss" scoped>
+<style lang="scss">
 #truss {
   min-height: 100vh;
 
@@ -53,8 +59,12 @@ export default {
   }
 
   #truss-analysis {
-    min-height: 100vh;
+    height: 100vh;
     width: 100vw;
+
+    .tabs, .tabs .tab-content, .tab-pane {
+      height: 100%;
+    }
   }
 }
 </style>

@@ -18,5 +18,10 @@ body {
 
   min-height: 100vh;
   width: 100vw;
+
+  .unit {
+    color: #b0b8bf;
+    font-size: 13px;
+  }
 }
 </style>
