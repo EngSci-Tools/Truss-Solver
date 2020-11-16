@@ -81,6 +81,7 @@
         <b-button id='force-remove-button' class='m-1' @click='removeSelectedForces'>Remove</b-button>
       </div>
     </div>
+    <b-alert class='alert' dismissible variant='danger' v-model='calculatedFailed'><b>Error</b>: {{ calculatedFailedMessage }}</b-alert>
     <div id='tutorial-container'>
       <b-popover @hidden='stepTutorial(1)' triggers='manual' title='Mode' ref='modePopover' target='mode-dropdown'>
         <p>The current controls change depending on the mode. There are a few constants though.</p>
@@ -158,6 +159,7 @@ export default {
     copied: false,
 
     calculatedFailed: false,
+    lastCalculatedFailed: false,
     calculatedFailedMessage: 'Pin 2 Joints',
     visuals: { // When any of the visuals update, the whole image should be redrawn
       width: 0,
@@ -2046,10 +2048,12 @@ export default {
           for (const [ghostId, joint] of Object.entries(this.ghostStructures.joints)) {
             if (!(ghostId in overlaps)) {
               actionList.push(new actions.joints.ADD(joint.pos, nextId, joint.type))
+              actionList.push(new actions.select.SELECT([ghostId]))
               idMap[ghostId] = nextId
               nextId = this.getNextJointId(nextId)
             }
           }
+          actionList.push(new actions.select.SELECT(Object.keys(overlaps)))
 
           for (let [jointOne, jointTwo] of this.ghostStructures.members.getAllMembers()) {
             jointOne = overlaps[jointOne] || idMap[jointOne]
@@ -2072,6 +2076,7 @@ export default {
               const delta = [newPos[0] - joint.pos[0], newPos[1] - joint.pos[1]]
               if (delta[0] !== 0 || delta[1] !== 0) {
                 actionList.push(new actions.joints.MOVE(delta, id))
+                actionList.push(new actions.select.SELECT([id]))
               }
               if (joint.type !== newType) {
                 actionList.push(new actions.joints.SETTYPE(id, joint.type, newType))
@@ -2187,10 +2192,7 @@ export default {
       }
       return solutions
     },
-    getInternalForces (display = false) {
-      if (this.calculatedFailed) {
-        return
-      }
+    getInternalForces () {
       const members = this.structures.members.getAllMembers()
       const joints = Object.keys(this.structures.joints)
       const componentMatrix = this.forceComponentMatrix(members, joints)
@@ -2198,9 +2200,7 @@ export default {
       try {
         solutionVector = this.forceSolutionVector(joints)
       } catch (err) {
-        if (display) {
-          this.onCalculateFailed('Pin 2 Joints')
-        }
+        this.onCalculateFailed('Your truss must have exactly one pin and one roller.')
         this.structures.internalForces = {}
         this.redraw()
         return
@@ -2209,9 +2209,7 @@ export default {
       try {
         solution = linear.solve(componentMatrix, [...solutionVector]) // I recreate solutionVector because this function mutates it.
       } catch (err) {
-        if (display) {
-          this.onCalculateFailed('Matrix Singular')
-        }
+        this.onCalculateFailed('Solution matrix is unsolvable. Try removing members.')
         this.structures.internalForces = {}
         this.redraw()
         return
@@ -2222,10 +2220,6 @@ export default {
         forces[memberId] = toSlideRule(Math.round(solution[i] * 10 ** 6) / 10 ** 6)
       }
       this.structures.internalForces = forces
-      if (display) {
-        this.showingResults = true
-      }
-      this.copied = false
 
       const memberLengths = members.map(([idOne, idTwo]) => {
         const jointOne = this.structures.joints[idOne]
@@ -2243,12 +2237,16 @@ export default {
         this.solution.memberLengths = memberLengths
       }
 
+      this.calculatedFailed = false
+      this.lastCalculatedFailed = false
       this.redraw()
       return forces
     },
     onCalculateFailed (message) {
-      console.error(message)
-      this.calculatedFailed = true
+      if (!this.lastCalculatedFailed) {
+        this.calculatedFailed = true
+      }
+      this.lastCalculatedFailed = true
       this.calculatedFailedMessage = message
       if (this.solution) {
         this.solution.componentMatrix = []
@@ -2258,9 +2256,6 @@ export default {
         this.solution.solutionVector = []
         this.solution.memberLengths = []
       }
-      setTimeout(() => {
-        this.calculatedFailed = false
-      }, 2000)
     },
 
     // Helpers for exporting and importing
@@ -2341,6 +2336,13 @@ export default {
     .tick-input {
       max-width: 17em;
     }
+  }
+
+  .alert {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
   }
 }
 </style>

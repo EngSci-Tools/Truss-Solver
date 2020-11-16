@@ -18,7 +18,8 @@
             <b-td>{{ member.member.join('-') }}</b-td>
             <b-td>{{ toSlideRule(member.length) }} <span class='unit'>m</span></b-td>
             <b-td>{{ toSlideRule(member.force) }} <span class='unit'>kN</span></b-td>
-            <b-td>{{ toSlideRule(member.minA) }} <span class='unit'>mm<sup>2</sup></span></b-td>
+            <b-td v-if='member.minA'>{{ toSlideRule(member.minA) }} <span class='unit'>mm<sup>2</sup></span></b-td>
+            <b-td v-else></b-td>
             <b-td v-if='member.minI'>{{ toSlideRule(member.minI) }} <span class='unit'>10<sup>6</sup>mm<sup>4</sup></span></b-td>
             <b-td v-else></b-td>
             <b-td v-if='member.minR'>{{ toSlideRule(member.minR) }} <span class='unit'>mm</span></b-td>
@@ -32,20 +33,20 @@
       <b-card no-body>
         <b-card-body class='pb-2'>
           <b-card-title>Analysis</b-card-title>
-          <b-card-text><b>Minimums:</b></b-card-text>
+          <b-card-text><b>Minimums -</b></b-card-text>
         </b-card-body>
         <b-list-group flush>
-          <b-list-group-item><b class='ml-3'>Area</b> {{ toSlideRule(minValueMembers.minA.minA) }} <span class='unit'>mm<sup>2</sup></span></b-list-group-item>
-          <b-list-group-item><b class='ml-3'>i</b> {{ toSlideRule(minValueMembers.minI.minI) }} <span class='unit'>10<sup>6</sup>mm<sup>4</sup></span></b-list-group-item>
-          <b-list-group-item><b class='ml-3'>Radius</b> {{ toSlideRule(minValueMembers.minR.minR) }} <span class='unit'>mm</span></b-list-group-item>
+          <b-list-group-item><b class='ml-3'>Area:</b> {{ toSlideRule(minValueMembers.minA.minA) }} <span class='unit'>mm<sup>2</sup></span></b-list-group-item>
+          <b-list-group-item><b class='ml-3'>i:</b> {{ toSlideRule(minValueMembers.minI.minI) }} <span class='unit'>10<sup>6</sup>mm<sup>4</sup></span></b-list-group-item>
+          <b-list-group-item><b class='ml-3'>Radius:</b> {{ toSlideRule(minValueMembers.minR.minR) }} <span class='unit'>mm</span></b-list-group-item>
         </b-list-group>
         <b-card-body class='pb-2 mt-1'>
-          <b-card-text><b>Suggestion: {{ bestHss.hss }}</b></b-card-text>
+          <b-card-text><b>Suggestion - {{ (bestHss || { hss: 'None' }).hss }}</b></b-card-text>
         </b-card-body>
-        <b-list-group flush>
-          <b-list-group-item><b class='ml-3'>Area</b> {{ bestHss.area }} <span class='unit'>mm<sup>2</sup></span></b-list-group-item>
-          <b-list-group-item><b class='ml-3'>i</b> {{ bestHss.i }} <span class='unit'>10<sup>6</sup>mm<sup>4</sup></span></b-list-group-item>
-          <b-list-group-item><b class='ml-3'>Radius</b> {{ bestHss.radius }} <span class='unit'>mm</span></b-list-group-item>
+        <b-list-group v-if='bestHss' flush>
+          <b-list-group-item><b class='ml-3'>Area:</b> {{ bestHss.area }} <span class='unit'>mm<sup>2</sup></span></b-list-group-item>
+          <b-list-group-item><b class='ml-3'>i:</b> {{ bestHss.i }} <span class='unit'>10<sup>6</sup>mm<sup>4</sup></span></b-list-group-item>
+          <b-list-group-item><b class='ml-3'>Radius:</b> {{ bestHss.radius }} <span class='unit'>mm</span></b-list-group-item>
         </b-list-group>
       </b-card>
     </div>
@@ -101,7 +102,7 @@ export default {
             minAMember = memberCon
           }
         } else {
-          memberConstraints.push({ member, length, force })
+          memberConstraints.push({ member, length, force, hss: 'None' })
         }
       }
       return {
