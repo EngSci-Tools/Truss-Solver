@@ -12,10 +12,11 @@ Basic Controls:
 
 Todo:
 - [x] Allow users to move joints.
-- [ ] Compute horizontal reaction forces.
-- [ ] Add more truss types.
+- [X] Compute horizontal reaction forces.
+- [X] Add more truss types.
+- [ ] Add even more truss types. The difficult ones.
 - [ ] Make the home page look better.
-- [ ] Create a "Show my work" view.
+- [X] Create a "Show my work" view.
 - [ ] Add a deflection solver.
 - [ ] Create a way to analyze specific members
 
