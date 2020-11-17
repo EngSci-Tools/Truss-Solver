@@ -11,13 +11,16 @@ Basic Controls:
    1. Force: Left click selects a nearby joint. It also places a force of 1kN in the down direction to the joint.
 
 Todo:
+- [ ] Add even more truss types to automatic generator. The difficult ones.
+- [ ] Make the home page look better.
+- [ ] Add more section types beyond square HSS
+- [ ] Allow for unit changes
+- [ ] Add a deflection solver.
+- [ ] Compute second order effects.
+- [ ] Create a way to analyze specific members
 - [x] Allow users to move joints.
 - [X] Compute horizontal reaction forces.
 - [X] Add more truss types.
-- [ ] Add even more truss types. The difficult ones.
-- [ ] Make the home page look better.
 - [X] Create a "Show my work" view.
-- [ ] Add a deflection solver.
-- [ ] Create a way to analyze specific members
 
 If you want to solve one of these, shoot me a message on the discord and I will point you to the relative components in the code.
